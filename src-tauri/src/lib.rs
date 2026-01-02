@@ -160,6 +160,17 @@ fn apply_filter(filter: String) -> Result<u64, String> {
     Ok(status.frames.unwrap_or(0))
 }
 
+/// Get detailed frame information (protocol tree + hex bytes)
+#[tauri::command]
+fn get_frame_details(frame_num: u32) -> Result<serde_json::Value, String> {
+    let client_guard = get_sharkd().lock();
+    let client = client_guard
+        .as_ref()
+        .ok_or_else(|| "Sharkd not initialized".to_string())?;
+
+    client.frame(frame_num)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -172,7 +183,8 @@ pub fn run() {
             get_frames,
             get_status,
             check_filter,
-            apply_filter
+            apply_filter,
+            get_frame_details
         ])
         .setup(|app| {
             // Try to initialize sharkd on startup

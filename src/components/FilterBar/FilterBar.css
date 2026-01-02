@@ -1,0 +1,86 @@
+/* FilterBar Component */
+.filter-bar {
+  height: var(--filter-height);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-primary);
+  flex-shrink: 0;
+}
+
+.filter-input-wrapper {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  padding: 0 10px;
+  transition: border-color 0.15s ease;
+}
+
+.filter-input-wrapper:focus-within {
+  border-color: var(--accent-blue);
+}
+
+.filter-input-wrapper.error {
+  border-color: var(--accent-red);
+}
+
+.filter-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+
+.filter-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 8px 4px;
+  outline: none;
+}
+
+.filter-input::placeholder {
+  color: var(--text-muted);
+}
+
+.filter-clear {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.filter-clear:hover {
+  color: var(--text-secondary);
+}
+
+.filter-apply {
+  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.filter-apply:hover {
+  background: var(--bg-hover);
+}
+
+.filter-error {
+  color: var(--accent-red);
+  font-size: 11px;
+}

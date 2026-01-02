@@ -1,0 +1,137 @@
+/* Packet Detail Pane */
+.packet-detail-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-primary);
+  border-top: 1px solid var(--border-primary);
+}
+
+.packet-detail-pane.empty,
+.packet-detail-pane.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  gap: 8px;
+}
+
+/* Tabs */
+.detail-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.detail-tab {
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.detail-tab:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.detail-tab.active {
+  background: var(--bg-tertiary);
+  color: var(--accent-blue);
+}
+
+.detail-tab-info {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Content area */
+.detail-content {
+  flex: 1;
+  overflow: auto;
+  padding: 8px;
+}
+
+/* Protocol Tree */
+.proto-tree {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.proto-node-label {
+  display: flex;
+  align-items: center;
+  padding: 2px 4px;
+  border-radius: 3px;
+  cursor: default;
+  user-select: none;
+}
+
+.proto-node-label.expandable {
+  cursor: pointer;
+}
+
+.proto-node-label:hover {
+  background: var(--bg-hover);
+}
+
+.proto-node-label.expert {
+  color: var(--accent-orange);
+}
+
+.expand-icon {
+  display: inline-block;
+  width: 16px;
+  font-size: 10px;
+  color: var(--text-muted);
+  transition: transform 0.1s ease;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.expand-icon.expanded {
+  transform: rotate(90deg);
+}
+
+.proto-label {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.proto-value {
+  color: var(--accent-blue);
+  margin-left: 6px;
+  font-weight: 400;
+}
+
+.proto-children {
+  border-left: 1px solid var(--border-secondary);
+  margin-left: 11px;
+}
+
+/* Hex Dump */
+.hex-dump {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  white-space: pre;
+  margin: 0;
+  padding: 12px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  overflow-x: auto;
+  border: 1px solid var(--border-primary);
+}

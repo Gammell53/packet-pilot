@@ -1,0 +1,64 @@
+/* Footer Component */
+.app-footer {
+  height: var(--footer-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-primary);
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.footer-left,
+.footer-center,
+.footer-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.footer-center {
+  flex: 1;
+  justify-content: center;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--text-muted);
+  border-radius: 50%;
+  transition: background 0.3s ease;
+}
+
+.status-dot.ready {
+  background: var(--accent-green);
+}
+
+.capture-stat {
+  padding: 2px 6px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  font-family: var(--font-mono);
+}
+
+.selected-info {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.packet-count {
+  font-family: var(--font-mono);
+}
+
+.shortcuts-hint {
+  color: var(--text-muted);
+}
