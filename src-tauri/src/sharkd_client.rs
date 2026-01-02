@@ -292,10 +292,21 @@ impl SharkdClient {
         Ok(frames)
     }
 
-    /// Get detailed information about a specific frame
-    #[allow(dead_code)]
+    /// Get detailed information about a specific frame (protocol tree)
     pub fn frame(&self, frame_num: u32) -> Result<Value, String> {
-        self.send_request("frame", Some(json!({ "frame": frame_num, "proto": true })))
+        self.send_request("frame", Some(json!({ 
+            "frame": frame_num, 
+            "proto": true,
+            "bytes": true
+        })))
+    }
+    
+    /// Get the hex dump of a specific frame
+    pub fn frame_bytes(&self, frame_num: u32) -> Result<Value, String> {
+        self.send_request("frame", Some(json!({ 
+            "frame": frame_num, 
+            "bytes": true
+        })))
     }
 
     /// Check if a display filter is valid
