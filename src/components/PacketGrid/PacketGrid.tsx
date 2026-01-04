@@ -14,6 +14,8 @@ interface PacketGridProps {
   selectedFrame: number | null;
   onSelectFrame: (frameNumber: number) => void;
   onContextMenu?: (e: React.MouseEvent, frame: FrameData) => void;
+  /** Called when the visible range changes */
+  onVisibleRangeChange?: (start: number, end: number) => void;
 }
 
 const ROW_HEIGHT = 28;
@@ -34,6 +36,7 @@ export const PacketGrid = forwardRef<PacketGridRef, PacketGridProps>(({
   selectedFrame,
   onSelectFrame,
   onContextMenu,
+  onVisibleRangeChange,
 }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -164,6 +167,13 @@ export const PacketGrid = forwardRef<PacketGridRef, PacketGridProps>(({
 
     return () => clearTimeout(timeoutId);
   }, [startIndex, endIndex, totalFrames, ensureRange]);
+
+  // Notify parent of visible range changes
+  useEffect(() => {
+    if (totalFrames === 0) return;
+    // Convert to 1-indexed frame numbers
+    onVisibleRangeChange?.(startIndex + 1, endIndex + 1);
+  }, [startIndex, endIndex, totalFrames, onVisibleRangeChange]);
 
   // Measure container height
   useEffect(() => {

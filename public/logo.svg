@@ -1,0 +1,21 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Gradient background -->
+  <rect x="32" y="32" width="448" height="448" rx="80" fill="url(#bg5)"/>
+
+  <!-- Paper plane -->
+  <path d="M96 268L400 108L300 404L236 276L96 268Z" fill="white"/>
+  <path d="M236 276L300 404L272 288L236 276Z" fill="#e2e8f0"/>
+
+  <!-- Sleek packet -->
+  <rect x="184" y="160" width="76" height="52" rx="8" fill="#0f172a"/>
+  <circle cx="200" cy="178" r="6" fill="#10b981"/>
+  <rect x="214" y="174" width="32" height="8" rx="4" fill="white" opacity="0.8"/>
+  <rect x="196" y="192" width="50" height="6" rx="3" fill="white" opacity="0.4"/>
+
+  <defs>
+    <linearGradient id="bg5" x1="32" y1="32" x2="480" y2="480">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#1d4ed8"/>
+    </linearGradient>
+  </defs>
+</svg>

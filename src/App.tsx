@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 // Hooks
 import { useSharkd, useTheme, useKeyboardShortcuts, useFrameCache } from "./hooks";
+import { useSettings } from "./hooks/useSettings";
 
 // Components
 import { Header } from "./components/Header/Header";
@@ -13,6 +14,8 @@ import { PacketGrid } from "./components/PacketGrid/PacketGrid";
 import { PacketDetailPane } from "./components/PacketDetailPane/PacketDetailPane";
 import { ContextMenu } from "./components/ui/ContextMenu";
 import { GoToPacketDialog } from "./components/dialogs/GoToPacketDialog";
+import { SettingsDialog } from "./components/dialogs/SettingsDialog";
+import { ChatSidebar } from "./components/ChatSidebar";
 
 // Types
 import type { FrameData, PacketGridRef, ContextMenuState } from "./types";
@@ -25,6 +28,7 @@ import "./App.css";
 function App() {
   // Custom hooks
   const { theme, toggleTheme } = useTheme();
+  const { settings, hasApiKey, updateApiKey, updateModel } = useSettings();
   const {
     isReady: sharkdReady,
     isLoading,
@@ -62,6 +66,9 @@ function App() {
   const [detailPaneHeight, setDetailPaneHeight] = useState(250);
   const [showGoToDialog, setShowGoToDialog] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [showChatSidebar, setShowChatSidebar] = useState(false);
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [visibleRange, setVisibleRange] = useState({ start: 1, end: 100 });
 
   // Refs
   const gridRef = useRef<PacketGridRef | null>(null);
@@ -183,6 +190,11 @@ function App() {
     setContextMenu({ x: e.clientX, y: e.clientY, frame });
   }, []);
 
+  // Visible range tracking for AI context
+  const handleVisibleRangeChange = useCallback((start: number, end: number) => {
+    setVisibleRange({ start, end });
+  }, []);
+
   const applyPacketFilter = useCallback(
     (type: "source" | "dest" | "proto", value: string) => {
       let newFilter = "";
@@ -205,7 +217,11 @@ function App() {
     onOpenFile: handleOpenFile,
     onGoToPacket: () => setShowGoToDialog(true),
     onToggleDetailPane: () => setShowDetailPane((prev) => !prev),
-    onCloseDialogs: () => setShowGoToDialog(false),
+    onCloseDialogs: () => {
+      setShowGoToDialog(false);
+      setShowChatSidebar(false);
+    },
+    onOpenChat: () => setShowChatSidebar(true),
   });
 
   // Resize handler for detail pane
@@ -242,6 +258,7 @@ function App() {
         isLoading={effectiveIsLoading}
         onOpenFile={handleOpenFile}
         onToggleTheme={toggleTheme}
+        onOpenSettings={() => setShowSettingsDialog(true)}
       />
 
       {effectiveTotalFrames > 0 && (
@@ -289,6 +306,7 @@ function App() {
             selectedFrame={selectedFrame}
             onSelectFrame={setSelectedFrame}
             onContextMenu={handleContextMenu}
+            onVisibleRangeChange={handleVisibleRangeChange}
           />
         </div>
 
@@ -347,6 +365,36 @@ function App() {
           onClose={() => setShowGoToDialog(false)}
         />
       )}
+
+      {/* AI Chat Sidebar */}
+      <ChatSidebar
+        isOpen={showChatSidebar}
+        onClose={() => setShowChatSidebar(false)}
+        selectedFrame={selectedFrame}
+        visibleRange={visibleRange}
+        currentFilter={filter}
+        fileName={fileName}
+        totalFrames={effectiveTotalFrames}
+        onApplyFilter={(newFilter) => {
+          setFilter(newFilter);
+          setTimeout(handleApplyFilter, 0);
+        }}
+        onGoToPacket={handleGoToPacket}
+        apiKey={settings.apiKey}
+        model={settings.model}
+        hasApiKey={hasApiKey}
+        onOpenSettings={() => setShowSettingsDialog(true)}
+      />
+
+      {/* Settings Dialog */}
+      <SettingsDialog
+        isOpen={showSettingsDialog}
+        onClose={() => setShowSettingsDialog(false)}
+        currentApiKey={settings.apiKey}
+        currentModel={settings.model}
+        onSaveApiKey={updateApiKey}
+        onSaveModel={updateModel}
+      />
     </div>
   );
 }

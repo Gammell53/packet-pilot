@@ -1,3 +1,5 @@
+mod http_bridge;
+mod python_sidecar;
 mod sharkd_client;
 
 use parking_lot::Mutex;
@@ -67,14 +69,14 @@ impl From<Frame> for FrameData {
 #[tauri::command]
 fn init_sharkd() -> Result<String, String> {
     let mut client_guard = get_sharkd().lock();
-    
+
     if client_guard.is_some() {
         return Ok("Sharkd already initialized".to_string());
     }
-    
+
     let client = SharkdClient::new()?;
     *client_guard = Some(client);
-    
+
     Ok("Sharkd initialized successfully".to_string())
 }
 
@@ -156,7 +158,7 @@ fn apply_filter(filter: String) -> Result<u64, String> {
 
     client.set_filter(&filter)?;
     let status = client.status()?;
-    
+
     Ok(status.frames.unwrap_or(0))
 }
 
@@ -171,9 +173,51 @@ fn get_frame_details(frame_num: u32) -> Result<serde_json::Value, String> {
     client.frame(frame_num)
 }
 
+// ============================================
+// AI Sidecar Commands
+// ============================================
+
+/// Start the Python AI sidecar with config
+#[tauri::command]
+fn start_ai_sidecar(
+    api_key: Option<String>,
+    model: Option<String>,
+) -> Result<python_sidecar::SidecarStatus, String> {
+    let port = python_sidecar::spawn_python_sidecar_with_config(api_key, model)?;
+
+    // Wait briefly for startup
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+
+    let is_running = python_sidecar::check_python_sidecar();
+
+    Ok(python_sidecar::SidecarStatus {
+        is_running,
+        port,
+        version: Some("0.1.0".to_string()),
+        error: if is_running {
+            None
+        } else {
+            Some("Sidecar started but not responding yet".to_string())
+        },
+    })
+}
+
+/// Stop the Python AI sidecar
+#[tauri::command]
+fn stop_ai_sidecar() -> Result<(), String> {
+    python_sidecar::stop_python_sidecar()
+}
+
+/// Get the status of the Python AI sidecar
+#[tauri::command]
+fn get_ai_sidecar_status() -> python_sidecar::SidecarStatus {
+    python_sidecar::get_sidecar_status()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
@@ -184,7 +228,10 @@ pub fn run() {
             get_status,
             check_filter,
             apply_filter,
-            get_frame_details
+            get_frame_details,
+            start_ai_sidecar,
+            stop_ai_sidecar,
+            get_ai_sidecar_status
         ])
         .setup(|app| {
             // Try to initialize sharkd on startup
@@ -203,6 +250,17 @@ pub fn run() {
                     }
                 }
             });
+
+            // Start HTTP bridge for Python sidecar communication
+            std::thread::spawn(|| {
+                let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+                rt.block_on(async {
+                    if let Err(e) = http_bridge::start_http_bridge().await {
+                        eprintln!("HTTP bridge error: {}", e);
+                    }
+                });
+            });
+
             Ok(())
         })
         .run(tauri::generate_context!())

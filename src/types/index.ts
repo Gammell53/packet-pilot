@@ -105,3 +105,63 @@ export interface FrameCacheConfig {
   /** Extra frames to prefetch beyond visible range */
   prefetchDistance: number;
 }
+
+// ============================================
+// Chat & AI Types
+// ============================================
+
+export interface CaptureContext {
+  selectedPacketId: number | null;
+  selectedStreamId: number | null;
+  visibleRange: { start: number; end: number };
+  currentFilter: string;
+  fileName: string | null;
+  totalFrames: number;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  timestamp: number;
+  context?: CaptureContext;
+  isStreaming?: boolean;
+}
+
+export interface AnalyzeRequest {
+  query: string;
+  context: {
+    selected_packet_id: number | null;
+    selected_stream_id: number | null;
+    visible_range: { start: number; end: number };
+    current_filter: string;
+    file_name: string | null;
+    total_frames: number;
+  };
+  conversation_history: ChatMessage[];
+}
+
+export interface AnalyzeResponse {
+  message: string;
+  suggested_filter?: string;
+  suggested_action?: "apply_filter" | "go_to_packet" | "follow_stream";
+  action_payload?: unknown;
+}
+
+export interface FilterRequest {
+  query: string;
+  context: CaptureContext;
+}
+
+export interface FilterResponse {
+  filter: string;
+  is_valid: boolean;
+  explanation: string;
+}
+
+export interface SidecarStatus {
+  is_running: boolean;
+  port: number;
+  version?: string;
+  error?: string;
+}
