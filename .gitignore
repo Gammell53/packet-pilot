@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Private business documents
+/business/
+sidecar/.venv/
+__pycache__/

@@ -63,19 +63,19 @@ pub struct SharkdClient {
 fn get_target_triple() -> &'static str {
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     return "x86_64-unknown-linux-gnu";
-    
+
     #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
     return "aarch64-unknown-linux-gnu";
-    
+
     #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
     return "x86_64-apple-darwin";
-    
+
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     return "aarch64-apple-darwin";
-    
+
     #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
     return "x86_64-pc-windows-msvc";
-    
+
     #[cfg(not(any(
         all(target_os = "linux", target_arch = "x86_64"),
         all(target_os = "linux", target_arch = "aarch64"),
@@ -99,27 +99,27 @@ fn find_sharkd() -> Result<PathBuf, String> {
             }
         }
     }
-    
+
     // Try to find the bundled sidecar
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(exe_dir) = exe_path.parent() {
             let target_triple = get_target_triple();
-            
+
             // Sidecar naming convention: name-target_triple[.exe]
             #[cfg(target_os = "windows")]
             let sidecar_name = format!("sharkd-{}.exe", target_triple);
             #[cfg(not(target_os = "windows"))]
             let sidecar_name = format!("sharkd-{}", target_triple);
-            
+
             let sidecar_path = exe_dir.join(&sidecar_name);
-            
+
             if sidecar_path.exists() {
                 println!("Found bundled sharkd at: {:?}", sidecar_path);
                 return Ok(sidecar_path);
             }
         }
     }
-    
+
     Err("Sharkd not found. Please install Wireshark.".to_string())
 }
 
@@ -127,9 +127,9 @@ impl SharkdClient {
     /// Spawn a new sharkd process in stdio mode
     pub fn new() -> Result<Self, String> {
         let sharkd_path = find_sharkd()?;
-        
+
         println!("Spawning sharkd from: {:?}", sharkd_path);
-        
+
         let mut process = Command::new(&sharkd_path)
             .arg("-") // stdio mode
             .stdin(Stdio::piped())
@@ -172,10 +172,10 @@ impl SharkdClient {
             println!("Sharkd initialized successfully");
             return Ok(client);
         }
-        
+
         Err("Failed to verify sharkd is working".to_string())
     }
-    
+
     /// Read a raw line from stdout
     fn read_line(&self) -> Result<String, String> {
         let mut stdout = self.stdout.lock();
@@ -246,7 +246,7 @@ impl SharkdClient {
         println!("Loading file: {}", file_path);
         let result = self.send_request("load", Some(json!({ "file": file_path })))?;
         println!("Load result: {:?}", result);
-        
+
         // Check if load was successful
         // sharkd returns {"status":"OK"} on success or {"err": code} on failure
         if let Some(status) = result.get("status") {
@@ -255,11 +255,11 @@ impl SharkdClient {
                 return Ok(());
             }
         }
-        
+
         if let Some(err) = result.get("err") {
             return Err(format!("Failed to load file: error code {}", err));
         }
-        
+
         // If we got here with no error, assume success
         Ok(())
     }
@@ -294,25 +294,31 @@ impl SharkdClient {
 
     /// Get detailed information about a specific frame (protocol tree)
     pub fn frame(&self, frame_num: u32) -> Result<Value, String> {
-        self.send_request("frame", Some(json!({ 
-            "frame": frame_num, 
-            "proto": true,
-            "bytes": true
-        })))
+        self.send_request(
+            "frame",
+            Some(json!({
+                "frame": frame_num,
+                "proto": true,
+                "bytes": true
+            })),
+        )
     }
-    
+
     /// Get the hex dump of a specific frame
     pub fn frame_bytes(&self, frame_num: u32) -> Result<Value, String> {
-        self.send_request("frame", Some(json!({ 
-            "frame": frame_num, 
-            "bytes": true
-        })))
+        self.send_request(
+            "frame",
+            Some(json!({
+                "frame": frame_num,
+                "bytes": true
+            })),
+        )
     }
 
     /// Check if a display filter is valid
     pub fn check_filter(&self, filter: &str) -> Result<bool, String> {
         let result = self.send_request("check", Some(json!({ "filter": filter })))?;
-        
+
         // If there's an "err" field, the filter is invalid
         Ok(result.get("err").is_none())
     }
@@ -320,13 +326,13 @@ impl SharkdClient {
     /// Set a display filter and get matching frames
     pub fn set_filter(&self, filter: &str) -> Result<(), String> {
         let result = self.send_request("setfilter", Some(json!({ "filter": filter })))?;
-        
+
         if let Some(err) = result.get("err") {
             if err.as_i64() != Some(0) {
                 return Err(format!("Failed to set filter: {:?}", err));
             }
         }
-        
+
         Ok(())
     }
 }

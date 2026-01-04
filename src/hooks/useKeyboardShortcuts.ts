@@ -10,6 +10,7 @@ interface KeyboardShortcutsConfig {
   onGoToPacket: () => void;
   onToggleDetailPane: () => void;
   onCloseDialogs: () => void;
+  onOpenChat?: () => void;
 }
 
 export function useKeyboardShortcuts({
@@ -21,6 +22,7 @@ export function useKeyboardShortcuts({
   onGoToPacket,
   onToggleDetailPane,
   onCloseDialogs,
+  onOpenChat,
 }: KeyboardShortcutsConfig) {
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -46,6 +48,13 @@ export function useKeyboardShortcuts({
       if ((e.ctrlKey || e.metaKey) && e.key === "o") {
         e.preventDefault();
         onOpenFile();
+        return;
+      }
+
+      // Ctrl+K or Cmd+K: Open AI chat
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        onOpenChat?.();
         return;
       }
 
@@ -105,6 +114,7 @@ export function useKeyboardShortcuts({
       onGoToPacket,
       onToggleDetailPane,
       onCloseDialogs,
+      onOpenChat,
     ]
   );
 
