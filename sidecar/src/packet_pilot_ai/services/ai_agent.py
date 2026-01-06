@@ -2,7 +2,7 @@
 
 import os
 from typing import Optional
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, AuthenticationError, APIStatusError
 
 from ..models.schemas import (
     AnalyzeResponse,
@@ -11,6 +11,14 @@ from ..models.schemas import (
     ChatMessage,
 )
 from .rust_bridge import check_filter as validate_filter
+
+
+class AIServiceError(Exception):
+    """Custom exception for AI service errors with user-friendly messages."""
+    def __init__(self, message: str, user_message: str):
+        super().__init__(message)
+        self.user_message = user_message
+
 
 # OpenRouter client instance
 openai_client: Optional[AsyncOpenAI] = None
@@ -70,12 +78,39 @@ async def call_llm(
     # OpenRouter uses OpenAI format - system message goes in messages array
     full_messages = [{"role": "system", "content": system}] + messages
 
-    response = await client.chat.completions.create(
-        model=model,
-        max_tokens=max_tokens,
-        messages=full_messages,
-    )
-    return response.choices[0].message.content
+    try:
+        response = await client.chat.completions.create(
+            model=model,
+            max_tokens=max_tokens,
+            messages=full_messages,
+        )
+        return response.choices[0].message.content
+    except AuthenticationError as e:
+        raise AIServiceError(
+            str(e),
+            "Invalid API key. Please update your OpenRouter API key in Settings."
+        )
+    except APIStatusError as e:
+        if e.status_code == 401:
+            raise AIServiceError(
+                str(e),
+                "Invalid API key. Please update your OpenRouter API key in Settings."
+            )
+        elif e.status_code == 402:
+            raise AIServiceError(
+                str(e),
+                "Insufficient credits. Please add credits to your OpenRouter account or select a free model."
+            )
+        elif e.status_code == 429:
+            raise AIServiceError(
+                str(e),
+                "Rate limit exceeded. Please wait a moment and try again."
+            )
+        else:
+            raise AIServiceError(
+                str(e),
+                f"AI service error ({e.status_code}). Please try again later."
+            )
 
 
 async def analyze_packets(

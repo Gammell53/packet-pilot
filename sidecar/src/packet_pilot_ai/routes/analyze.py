@@ -3,7 +3,7 @@
 from fastapi import APIRouter, HTTPException
 
 from ..models.schemas import AnalyzeRequest, AnalyzeResponse
-from ..services.ai_agent import analyze_packets
+from ..services.ai_agent import analyze_packets, AIServiceError
 from ..services.rust_bridge import get_frames, get_frame_details
 
 router = APIRouter()
@@ -41,5 +41,7 @@ async def analyze(request: AnalyzeRequest) -> AnalyzeResponse:
 
         return result
 
+    except AIServiceError as e:
+        raise HTTPException(status_code=400, detail=e.user_message)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
