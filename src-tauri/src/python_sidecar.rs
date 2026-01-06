@@ -33,14 +33,20 @@ fn get_bundled_sidecar_path() -> Option<std::path::PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let exe_dir = exe.parent()?;
 
+    // Determine binary name based on platform
+    #[cfg(target_os = "windows")]
+    let binary_name = "packet-pilot-ai.exe";
+    #[cfg(not(target_os = "windows"))]
+    let binary_name = "packet-pilot-ai";
+
     // Try different locations based on platform
     let candidates = [
-        // Linux: binary is next to the main executable
-        exe_dir.join("packet-pilot-ai"),
+        // Linux/Windows: binary is next to the main executable
+        exe_dir.join(binary_name),
         // macOS: binary might be in Resources or MacOS
-        exe_dir.join("../Resources/packet-pilot-ai"),
+        exe_dir.join("../Resources").join(binary_name),
         // Fallback: look in a binaries subdirectory
-        exe_dir.join("binaries/packet-pilot-ai"),
+        exe_dir.join("binaries").join(binary_name),
     ];
 
     for candidate in &candidates {
@@ -275,26 +281,15 @@ pub fn check_python_sidecar() -> bool {
         }
     }
 
-    // HTTP health check - works regardless of how sidecar was started
-    match std::process::Command::new("curl")
-        .args([
-            "-s",
-            "-o",
-            "/dev/null",
-            "-w",
-            "%{http_code}",
-            "--max-time",
-            "2",
-            "http://127.0.0.1:8765/health",
-        ])
-        .output()
-    {
-        Ok(output) => {
-            let status_code = String::from_utf8_lossy(&output.stdout);
-            status_code.trim() == "200"
-        }
-        Err(_) => false,
-    }
+    // TCP connection check - works cross-platform without external tools
+    use std::net::TcpStream;
+    use std::time::Duration;
+
+    TcpStream::connect_timeout(
+        &"127.0.0.1:8765".parse().unwrap(),
+        Duration::from_secs(2),
+    )
+    .is_ok()
 }
 
 /// Get the current status of the Python sidecar
