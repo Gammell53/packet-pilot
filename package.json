@@ -9,11 +9,15 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "build:sidecar": "cd sidecar && ./build.sh",
+    "build:sidecar:win": "powershell -ExecutionPolicy Bypass -File sidecar/build.ps1",
     "build:sharkd": "./scripts/bundle-sharkd.sh",
+    "build:sharkd:win": "powershell -ExecutionPolicy Bypass -File scripts/bundle-sharkd.ps1",
     "build:binaries": "npm run build:sidecar && npm run build:sharkd",
+    "build:binaries:win": "npm run build:sidecar:win && npm run build:sharkd:win",
     "preview": "vite preview",
     "tauri": "tauri",
-    "tauri:build": "npm run build:binaries && tauri build"
+    "tauri:build": "npm run build:binaries && tauri build",
+    "tauri:build:win": "npm run build:binaries:win && tauri build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
