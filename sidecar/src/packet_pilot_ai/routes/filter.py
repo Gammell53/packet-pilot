@@ -3,7 +3,7 @@
 from fastapi import APIRouter, HTTPException
 
 from ..models.schemas import FilterRequest, FilterResponse
-from ..services.ai_agent import generate_filter
+from ..services.ai_agent import generate_filter, AIServiceError
 
 router = APIRouter()
 
@@ -18,5 +18,7 @@ async def create_filter(request: FilterRequest) -> FilterResponse:
         )
         return result
 
+    except AIServiceError as e:
+        raise HTTPException(status_code=400, detail=e.user_message)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
