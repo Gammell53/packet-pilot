@@ -1,0 +1,46 @@
+# Test scenarios for AI response quality
+# These verify that AI responses are helpful and accurate
+
+name: Response Quality Tests
+description: Verify AI provides helpful, accurate responses
+
+scenarios:
+  # Filter suggestion quality
+  - name: filter_help_request
+    query: "How do I filter for TLS handshakes?"
+    expected_response_contains:
+      - "tls"
+      - "handshake"
+    response_should_include_filter: true
+
+  - name: complex_filter_help
+    query: "Create a filter for HTTP POST requests to api.example.com"
+    expected_response_contains:
+      - "http"
+      - "request"
+      - "method"
+    response_should_include_filter: true
+
+  # Analysis quality
+  - name: traffic_analysis_request
+    query: "Summarize the network traffic in this capture"
+    min_response_length: 100
+    expected_response_contains:
+      - "traffic"
+
+  - name: security_analysis
+    query: "Are there any suspicious patterns in this capture?"
+    min_response_length: 50
+
+  # Explanation quality
+  - name: protocol_explanation
+    query: "Explain what's happening in the DNS traffic"
+    expected_response_contains:
+      - "DNS"
+    min_response_length: 50
+
+  # Error handling quality
+  - name: invalid_filter_guidance
+    query: "Why doesn't my filter 'http.request.uri contains login' work?"
+    expected_response_contains:
+      - "filter"

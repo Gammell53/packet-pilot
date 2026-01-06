@@ -14,7 +14,7 @@
 
 .settings-dialog {
   background: var(--bg-primary);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border-primary);
   border-radius: 8px;
   width: 90%;
   max-width: 500px;
@@ -30,7 +30,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 16px 20px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-primary);
 }
 
 .settings-header h2 {
@@ -110,7 +110,7 @@
   gap: 4px;
   padding: 16px 12px;
   background: var(--bg-secondary);
-  border: 2px solid var(--border-color);
+  border: 2px solid var(--border-primary);
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -121,7 +121,7 @@
 }
 
 .provider-btn.active {
-  border-color: var(--accent-color);
+  border-color: var(--accent-blue);
   background: rgba(59, 130, 246, 0.1);
 }
 
@@ -141,7 +141,7 @@
   width: 100%;
   padding: 10px 12px;
   font-size: 14px;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border-primary);
   border-radius: 6px;
   background: var(--bg-secondary);
   color: var(--text-primary);
@@ -171,24 +171,13 @@
   font-style: normal;
 }
 
-/* Force dark background on dropdown in dark mode */
-[data-theme="dark"] .form-group select,
-[data-theme="dark"] .form-group select option,
-[data-theme="dark"] .form-group select optgroup {
-  background-color: #1e1e2e;
-  color: #cdd6f4;
-}
-
-[data-theme="dark"] .form-group select optgroup {
-  background-color: #181825;
-  color: #a6adc8;
-}
+/* Dropdown styling uses theme variables automatically */
 
 .form-group input:focus,
 .form-group select:focus {
   outline: none;
-  border-color: var(--accent-color);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 20%, transparent);
 }
 
 .form-group input::placeholder {
@@ -207,7 +196,7 @@
 .toggle-visibility {
   padding: 10px 14px;
   font-size: 12px;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border-primary);
   border-radius: 6px;
   background: var(--bg-secondary);
   color: var(--text-secondary);
@@ -227,7 +216,7 @@
 }
 
 .form-hint a {
-  color: var(--accent-color);
+  color: var(--accent-blue);
   text-decoration: none;
 }
 
@@ -260,7 +249,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 16px 20px;
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid var(--border-primary);
   background: var(--bg-secondary);
 }
 
@@ -281,13 +270,13 @@
 }
 
 .btn-primary {
-  background: var(--accent-color);
+  background: var(--accent-blue);
   color: white;
   border: none;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--accent-hover);
+  background: color-mix(in srgb, var(--accent-blue) 80%, white);
 }
 
 .btn-primary:disabled {
@@ -298,7 +287,7 @@
 .btn-secondary {
   background: var(--bg-tertiary);
   color: var(--text-primary);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border-primary);
 }
 
 .btn-secondary:hover {
