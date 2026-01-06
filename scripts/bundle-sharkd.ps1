@@ -1,5 +1,5 @@
 # Bundle sharkd for Windows distribution
-# Downloads Wireshark portable and extracts sharkd.exe with dependencies
+# Installs Wireshark via Chocolatey and copies sharkd.exe with dependencies
 
 $ErrorActionPreference = "Stop"
 
@@ -9,70 +9,68 @@ $OutputDir = Join-Path $ProjectRoot "src-tauri\binaries"
 $LibsDir = Join-Path $OutputDir "sharkd-libs"
 $Target = "x86_64-pc-windows-msvc"
 
-# Wireshark version to download
-$WiresharkVersion = "4.4.2"
-$WiresharkZipUrl = "https://2.na.dl.wireshark.org/win64/Wireshark-$WiresharkVersion-x64.zip"
-
-$TempDir = Join-Path $env:TEMP "wireshark-bundle-$WiresharkVersion"
-$ZipPath = Join-Path $TempDir "wireshark.zip"
-$ExtractDir = Join-Path $TempDir "extracted"
-
 Write-Host "Bundling sharkd for Windows..."
-Write-Host "Wireshark version: $WiresharkVersion"
 
 # Create directories
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 New-Item -ItemType Directory -Force -Path $LibsDir | Out-Null
-New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
 
-# Download Wireshark zip if not already cached
-if (-not (Test-Path $ZipPath)) {
-    Write-Host "Downloading Wireshark $WiresharkVersion..."
-    Write-Host "URL: $WiresharkZipUrl"
+# Check if Wireshark is already installed
+$WiresharkDir = $null
+$PossiblePaths = @(
+    "C:\Program Files\Wireshark",
+    "C:\Program Files (x86)\Wireshark",
+    "$env:ProgramFiles\Wireshark"
+)
 
-    try {
-        # Use TLS 1.2 for HTTPS
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-        $ProgressPreference = 'SilentlyContinue'  # Faster download
-        Invoke-WebRequest -Uri $WiresharkZipUrl -OutFile $ZipPath -UseBasicParsing
-        $ProgressPreference = 'Continue'
+foreach ($path in $PossiblePaths) {
+    if (Test-Path (Join-Path $path "sharkd.exe")) {
+        $WiresharkDir = $path
+        Write-Host "Found existing Wireshark installation at: $WiresharkDir"
+        break
     }
-    catch {
-        Write-Error "Failed to download Wireshark: $_"
-        Write-Host ""
-        Write-Host "Alternative: Install Wireshark manually from https://www.wireshark.org/download.html"
-        Write-Host "Then copy sharkd.exe to: $OutputDir\sharkd-$Target.exe"
+}
+
+# Install Wireshark via Chocolatey if not found
+if (-not $WiresharkDir) {
+    Write-Host "Wireshark not found. Installing via Chocolatey..."
+
+    # Check if choco is available
+    if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+        Write-Error "Chocolatey is not installed. Please install Wireshark manually."
         exit 1
     }
 
-    Write-Host "Download complete: $((Get-Item $ZipPath).Length / 1MB) MB"
-} else {
-    Write-Host "Using cached download: $ZipPath"
+    # Install Wireshark (includes sharkd)
+    choco install wireshark -y --no-progress
+
+    # Find the installation
+    foreach ($path in $PossiblePaths) {
+        if (Test-Path (Join-Path $path "sharkd.exe")) {
+            $WiresharkDir = $path
+            break
+        }
+    }
+
+    if (-not $WiresharkDir) {
+        Write-Error "Wireshark installation failed or sharkd.exe not found"
+        exit 1
+    }
+
+    Write-Host "Wireshark installed at: $WiresharkDir"
 }
 
-# Extract the zip
-if (-not (Test-Path $ExtractDir)) {
-    Write-Host "Extracting Wireshark..."
-    Expand-Archive -Path $ZipPath -DestinationPath $ExtractDir -Force
-}
-
-# Find sharkd.exe in the extracted files
-$SharkdPath = Get-ChildItem -Path $ExtractDir -Recurse -Filter "sharkd.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-
-if (-not $SharkdPath) {
-    Write-Error "sharkd.exe not found in Wireshark distribution"
-    Write-Host "Contents of extract directory:"
-    Get-ChildItem -Path $ExtractDir -Recurse -Depth 2 | Select-Object FullName
+$SharkdPath = Join-Path $WiresharkDir "sharkd.exe"
+if (-not (Test-Path $SharkdPath)) {
+    Write-Error "sharkd.exe not found at: $SharkdPath"
     exit 1
 }
 
-Write-Host "Found sharkd at: $($SharkdPath.FullName)"
-$WiresharkDir = $SharkdPath.DirectoryName
+Write-Host "Found sharkd at: $SharkdPath"
 
 # Copy sharkd.exe with target suffix
 $DestSharkd = Join-Path $OutputDir "sharkd-$Target.exe"
-Copy-Item $SharkdPath.FullName $DestSharkd -Force
+Copy-Item $SharkdPath $DestSharkd -Force
 Write-Host "Copied: $DestSharkd"
 
 # List of DLLs that sharkd typically needs
