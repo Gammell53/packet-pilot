@@ -32,7 +32,12 @@
       "icons/icon.ico"
     ],
     "externalBin": [
-      "binaries/sharkd"
+      "binaries/sharkd",
+      "binaries/sharkd-wrapper",
+      "binaries/packet-pilot-ai"
+    ],
+    "resources": [
+      "binaries/sharkd-libs/*"
     ]
   }
 }

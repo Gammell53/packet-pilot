@@ -1,7 +1,8 @@
 //! Python sidecar process management.
 //!
 //! Handles spawning, monitoring, and stopping the Python FastAPI server
-//! that powers the AI analysis features.
+//! that powers the AI analysis features. Supports both development mode
+//! (running from Python source) and production mode (bundled executable).
 
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -13,6 +14,42 @@ static PYTHON_PROCESS: OnceLock<Mutex<Option<Child>>> = OnceLock::new();
 
 fn get_python_process() -> &'static Mutex<Option<Child>> {
     PYTHON_PROCESS.get_or_init(|| Mutex::new(None))
+}
+
+/// Check if we're running in production (bundled) mode
+fn is_production() -> bool {
+    // In production, the exe is in the app bundle, not in a target/debug directory
+    if let Ok(exe) = std::env::current_exe() {
+        let path_str = exe.to_string_lossy();
+        // Development builds are in target/debug or target/release
+        !path_str.contains("target/debug") && !path_str.contains("target/release")
+    } else {
+        false
+    }
+}
+
+/// Get the path to the bundled sidecar binary (production mode)
+fn get_bundled_sidecar_path() -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let exe_dir = exe.parent()?;
+
+    // Try different locations based on platform
+    let candidates = [
+        // Linux: binary is next to the main executable
+        exe_dir.join("packet-pilot-ai"),
+        // macOS: binary might be in Resources or MacOS
+        exe_dir.join("../Resources/packet-pilot-ai"),
+        // Fallback: look in a binaries subdirectory
+        exe_dir.join("binaries/packet-pilot-ai"),
+    ];
+
+    for candidate in &candidates {
+        if candidate.exists() {
+            return Some(candidate.clone());
+        }
+    }
+
+    None
 }
 
 /// Status of the Python sidecar
@@ -122,6 +159,50 @@ pub fn spawn_python_sidecar_with_config(
         }
     }
 
+    let process = if is_production() {
+        // Production mode: use bundled binary
+        spawn_bundled_sidecar(api_key, model)?
+    } else {
+        // Development mode: use Python directly
+        spawn_dev_sidecar(api_key, model)?
+    };
+
+    println!("Python sidecar spawned with PID: {}", process.id());
+    *guard = Some(process);
+
+    Ok(8765)
+}
+
+/// Spawn the bundled sidecar binary (production mode)
+fn spawn_bundled_sidecar(
+    api_key: Option<String>,
+    model: Option<String>,
+) -> Result<Child, String> {
+    let sidecar_path = get_bundled_sidecar_path()
+        .ok_or_else(|| "Could not find bundled sidecar binary".to_string())?;
+
+    println!("Starting bundled sidecar from: {:?}", sidecar_path);
+
+    let mut cmd = Command::new(&sidecar_path);
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+    // Pass environment variables
+    if let Some(key) = api_key {
+        cmd.env("OPENROUTER_API_KEY", key);
+    }
+    if let Some(m) = model {
+        cmd.env("AI_MODEL", m);
+    }
+
+    cmd.spawn()
+        .map_err(|e| format!("Failed to spawn bundled sidecar: {}", e))
+}
+
+/// Spawn the Python sidecar from source (development mode)
+fn spawn_dev_sidecar(
+    api_key: Option<String>,
+    model: Option<String>,
+) -> Result<Child, String> {
     let sidecar_path = get_sidecar_path()?;
     let python_cmd = find_python(&sidecar_path)?;
 
@@ -151,14 +232,8 @@ pub fn spawn_python_sidecar_with_config(
         cmd.env("AI_MODEL", m);
     }
 
-    let process = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to spawn Python sidecar: {}", e))?;
-
-    println!("Python sidecar spawned with PID: {}", process.id());
-    *guard = Some(process);
-
-    Ok(8765)
+    cmd.spawn()
+        .map_err(|e| format!("Failed to spawn Python sidecar: {}", e))
 }
 
 /// Spawn the Python sidecar process (legacy, no config)

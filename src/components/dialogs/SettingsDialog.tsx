@@ -10,14 +10,15 @@ interface SettingsDialogProps {
   onSaveModel: (model: string) => Promise<void>;
 }
 
-// Top models from OpenRouter rankings by usage
+// Top models from OpenRouter rankings by usage (updated Jan 2026)
 const OPENROUTER_MODELS = [
   // Free tier
   { id: "xiaomi/mimo-v2-flash:free", name: "MiMo-V2-Flash (free)", provider: "Free" },
-  { id: "google/gemini-2.0-flash-001:free", name: "Gemini 2.0 Flash (free)", provider: "Free" },
+  { id: "mistralai/devstral-2512:free", name: "Devstral 2 (free)", provider: "Free" },
+  { id: "nvidia/nemotron-3-nano-30b-a3b:free", name: "Nemotron 3 Nano (free)", provider: "Free" },
   // Google
-  { id: "google/gemini-2.5-flash-preview", name: "Gemini 2.5 Flash", provider: "Google" },
-  { id: "google/gemini-2.0-flash-001", name: "Gemini 2.0 Flash", provider: "Google" },
+  { id: "google/gemini-3-flash-preview", name: "Gemini 3 Flash", provider: "Google" },
+  { id: "google/gemini-2.5-flash-preview-05-20", name: "Gemini 2.5 Flash", provider: "Google" },
   // xAI
   { id: "x-ai/grok-3-fast", name: "Grok 3 Fast", provider: "xAI" },
   // DeepSeek

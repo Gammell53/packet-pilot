@@ -86,36 +86,51 @@ fn get_target_triple() -> &'static str {
     return "unknown";
 }
 
-/// Find the sharkd binary - tries sidecar first, then system PATH
+/// Find the sharkd binary - tries bundled first (production), then system PATH (dev)
 fn find_sharkd() -> Result<PathBuf, String> {
-    // First check if system sharkd exists and use it directly
-    // This avoids issues with wrapper scripts not passing stdout correctly
+    // In production, try bundled sharkd first
+    if let Ok(exe_path) = std::env::current_exe() {
+        let path_str = exe_path.to_string_lossy();
+        let is_production =
+            !path_str.contains("target/debug") && !path_str.contains("target/release");
+
+        if is_production {
+            if let Some(exe_dir) = exe_path.parent() {
+                let target_triple = get_target_triple();
+
+                // Try the wrapper script first (sets up LD_LIBRARY_PATH)
+                #[cfg(not(target_os = "windows"))]
+                {
+                    let wrapper_name = format!("sharkd-wrapper-{}", target_triple);
+                    let wrapper_path = exe_dir.join(&wrapper_name);
+                    if wrapper_path.exists() {
+                        println!("Using bundled sharkd wrapper at: {:?}", wrapper_path);
+                        return Ok(wrapper_path);
+                    }
+                }
+
+                // Try direct binary
+                #[cfg(target_os = "windows")]
+                let sidecar_name = format!("sharkd-{}.exe", target_triple);
+                #[cfg(not(target_os = "windows"))]
+                let sidecar_name = format!("sharkd-{}", target_triple);
+
+                let sidecar_path = exe_dir.join(&sidecar_name);
+                if sidecar_path.exists() {
+                    println!("Found bundled sharkd at: {:?}", sidecar_path);
+                    return Ok(sidecar_path);
+                }
+            }
+        }
+    }
+
+    // Fall back to system sharkd (development mode or if bundled not found)
     if let Ok(output) = std::process::Command::new("which").arg("sharkd").output() {
         if output.status.success() {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !path.is_empty() {
                 println!("Using system sharkd: {}", path);
                 return Ok(PathBuf::from(path));
-            }
-        }
-    }
-
-    // Try to find the bundled sidecar
-    if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(exe_dir) = exe_path.parent() {
-            let target_triple = get_target_triple();
-
-            // Sidecar naming convention: name-target_triple[.exe]
-            #[cfg(target_os = "windows")]
-            let sidecar_name = format!("sharkd-{}.exe", target_triple);
-            #[cfg(not(target_os = "windows"))]
-            let sidecar_name = format!("sharkd-{}", target_triple);
-
-            let sidecar_path = exe_dir.join(&sidecar_name);
-
-            if sidecar_path.exists() {
-                println!("Found bundled sharkd at: {:?}", sidecar_path);
-                return Ok(sidecar_path);
             }
         }
     }
