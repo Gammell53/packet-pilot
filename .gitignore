@@ -27,3 +27,13 @@ dist-ssr
 /business/
 sidecar/.venv/
 __pycache__/
+
+# PyInstaller build artifacts
+sidecar/build/
+sidecar/dist/
+*.spec.bak
+
+# Bundled binaries (built locally, too large for git)
+src-tauri/binaries/sharkd-libs/
+src-tauri/binaries/sharkd-*
+src-tauri/binaries/packet-pilot-ai-*

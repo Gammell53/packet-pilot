@@ -8,8 +8,12 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:sidecar": "cd sidecar && ./build.sh",
+    "build:sharkd": "./scripts/bundle-sharkd.sh",
+    "build:binaries": "npm run build:sidecar && npm run build:sharkd",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "tauri:build": "npm run build:binaries && tauri build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
