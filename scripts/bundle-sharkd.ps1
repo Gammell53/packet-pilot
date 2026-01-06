@@ -73,6 +73,11 @@ $DestSharkd = Join-Path $OutputDir "sharkd-$Target.exe"
 Copy-Item $SharkdPath $DestSharkd -Force
 Write-Host "Copied: $DestSharkd"
 
+# Also create sharkd-wrapper (Tauri expects this - on Windows it's just a copy of sharkd)
+$DestWrapper = Join-Path $OutputDir "sharkd-wrapper-$Target.exe"
+Copy-Item $SharkdPath $DestWrapper -Force
+Write-Host "Copied: $DestWrapper"
+
 # List of DLLs that sharkd typically needs
 # These are the core Wireshark libraries
 $RequiredDlls = @(
