@@ -1,0 +1,89 @@
+# Test scenarios for AI tool selection behavior
+# These verify that the AI selects appropriate tools for different queries
+
+name: Tool Selection Tests
+description: Verify AI selects the correct tools based on user queries
+
+scenarios:
+  # Search-related queries should trigger search_packets
+  - name: http_filter_request
+    query: "Show me all HTTP requests"
+    expected_tools:
+      - search_packets
+    expected_tool_args:
+      search_packets:
+        filter_contains: "http"
+
+  - name: dns_query_request
+    query: "Find all DNS queries in the capture"
+    expected_tools:
+      - search_packets
+    expected_tool_args:
+      search_packets:
+        filter_contains: "dns"
+
+  - name: specific_ip_search
+    query: "Show packets from 192.168.1.100"
+    expected_tools:
+      - search_packets
+    expected_tool_args:
+      search_packets:
+        filter_contains: "192.168.1.100"
+
+  # Stream-related queries should trigger get_stream
+  - name: tcp_stream_request
+    query: "Show me TCP stream 0"
+    expected_tools:
+      - get_stream
+    expected_tool_args:
+      get_stream:
+        stream_id: 0
+        protocol: "TCP"
+
+  - name: conversation_analysis
+    query: "Reconstruct the conversation in stream 5"
+    expected_tools:
+      - get_stream
+    expected_tool_args:
+      get_stream:
+        stream_id: 5
+
+  # Packet detail queries should trigger get_packet_details
+  - name: specific_packet_request
+    query: "Show me the details of packet 42"
+    expected_tools:
+      - get_packet_details
+    expected_tool_args:
+      get_packet_details:
+        packet_num: 42
+
+  - name: frame_inspection
+    query: "What's in frame number 100?"
+    expected_tools:
+      - get_packet_details
+    expected_tool_args:
+      get_packet_details:
+        packet_num: 100
+
+  # Multi-tool scenarios
+  - name: search_then_details
+    query: "Find HTTP errors and show me the details of the first one"
+    expected_tools:
+      - search_packets
+    expected_tool_args:
+      search_packets:
+        filter_contains: "http"
+    min_tool_calls: 1  # At least search should be called
+
+  # No-tool scenarios (should answer from context)
+  - name: general_overview
+    query: "What protocols are in this capture?"
+    expected_tools: []
+    expected_response_contains:
+      - "protocol"
+
+  - name: statistics_question
+    query: "How many packets are there?"
+    expected_tools: []
+    expected_response_contains:
+      - "packet"

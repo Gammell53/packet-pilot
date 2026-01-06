@@ -34,6 +34,152 @@ pub struct FramesResponse {
     pub frames: Vec<Frame>,
 }
 
+/// Stream payload segment from sharkd follow
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamPayload {
+    /// Byte count for this segment
+    pub n: u64,
+    /// Base64-encoded data
+    pub d: String,
+    /// Direction: 0 = client->server, 1 = server->client
+    pub s: u8,
+}
+
+/// Stream data returned from sharkd follow command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamData {
+    /// Server host
+    #[serde(default)]
+    pub shost: String,
+    /// Server port
+    #[serde(default)]
+    pub sport: String,
+    /// Client host
+    #[serde(default)]
+    pub chost: String,
+    /// Client port
+    #[serde(default)]
+    pub cport: String,
+    /// Server bytes total
+    #[serde(default)]
+    pub sbytes: u64,
+    /// Client bytes total
+    #[serde(default)]
+    pub cbytes: u64,
+    /// Payload segments
+    #[serde(default)]
+    pub payloads: Vec<StreamPayload>,
+}
+
+/// Protocol hierarchy node from tap phs
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProtocolNode {
+    /// Protocol name
+    #[serde(rename = "proto")]
+    pub protocol: String,
+    /// Frame count for this protocol
+    #[serde(default)]
+    pub frames: u64,
+    /// Byte count for this protocol
+    #[serde(default)]
+    pub bytes: u64,
+    /// Child protocols
+    #[serde(rename = "protos", default)]
+    pub children: Vec<ProtocolNode>,
+}
+
+/// Conversation from tap conv
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Conversation {
+    /// Source address
+    #[serde(default)]
+    pub saddr: String,
+    /// Destination address
+    #[serde(default)]
+    pub daddr: String,
+    /// Source port
+    #[serde(default)]
+    pub sport: Option<String>,
+    /// Destination port
+    #[serde(default)]
+    pub dport: Option<String>,
+    /// Received frames
+    #[serde(default)]
+    pub rxf: u64,
+    /// Received bytes
+    #[serde(default)]
+    pub rxb: u64,
+    /// Transmitted frames
+    #[serde(default)]
+    pub txf: u64,
+    /// Transmitted bytes
+    #[serde(default)]
+    pub txb: u64,
+    /// Start time
+    #[serde(default)]
+    pub start: Option<f64>,
+    /// Stop time
+    #[serde(default)]
+    pub stop: Option<f64>,
+    /// Filter to select this conversation
+    #[serde(default)]
+    pub filter: Option<String>,
+}
+
+/// Endpoint from tap host
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Endpoint {
+    /// Host address
+    #[serde(default)]
+    pub host: String,
+    /// Port (if applicable)
+    #[serde(default)]
+    pub port: Option<String>,
+    /// Received frames
+    #[serde(default)]
+    pub rxf: u64,
+    /// Received bytes
+    #[serde(default)]
+    pub rxb: u64,
+    /// Transmitted frames
+    #[serde(default)]
+    pub txf: u64,
+    /// Transmitted bytes
+    #[serde(default)]
+    pub txb: u64,
+    /// Filter to select this endpoint
+    #[serde(default)]
+    pub filter: Option<String>,
+}
+
+/// Tap result item
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TapResultItem {
+    /// Tap name
+    pub tap: String,
+    /// Tap type
+    #[serde(rename = "type")]
+    pub tap_type: String,
+    /// Protocol hierarchy (for phs tap)
+    #[serde(default)]
+    pub proto: Vec<ProtocolNode>,
+    /// Conversations (for conv tap)
+    #[serde(default)]
+    pub convs: Vec<Conversation>,
+    /// Endpoints (for host tap)
+    #[serde(default)]
+    pub hosts: Vec<Endpoint>,
+}
+
+/// Complete capture statistics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CaptureStats {
+    pub protocol_hierarchy: Vec<ProtocolNode>,
+    pub tcp_conversations: Vec<Conversation>,
+    pub udp_conversations: Vec<Conversation>,
+    pub endpoints: Vec<Endpoint>,
+}
+
 /// Generic JSON-RPC response
 #[derive(Debug, Deserialize)]
 struct JsonRpcResponse {
@@ -349,5 +495,105 @@ impl SharkdClient {
         }
 
         Ok(())
+    }
+
+    /// Search frames with a display filter - applies filter and returns matching frames
+    pub fn search_frames(
+        &self,
+        filter: &str,
+        skip: u32,
+        limit: u32,
+    ) -> Result<(Vec<Frame>, u64), String> {
+        // First apply the filter
+        self.set_filter(filter)?;
+
+        // Get the filtered frame count via status
+        let status = self.status()?;
+        let total = status.frames.unwrap_or(0);
+
+        // Get the matching frames
+        let frames = self.frames(skip, limit)?;
+
+        Ok((frames, total))
+    }
+
+    /// Clear the current display filter
+    pub fn clear_filter(&self) -> Result<(), String> {
+        self.set_filter("")
+    }
+
+    /// Follow a TCP, UDP, or HTTP stream
+    pub fn follow_stream(&self, protocol: &str, stream_id: u32) -> Result<StreamData, String> {
+        // Build the filter for the stream (e.g., "tcp.stream==0")
+        let filter = format!("{}.stream=={}", protocol.to_lowercase(), stream_id);
+
+        let result = self.send_request(
+            "follow",
+            Some(json!({
+                "follow": protocol.to_uppercase(),
+                "filter": filter
+            })),
+        )?;
+
+        serde_json::from_value(result).map_err(|e| format!("Failed to parse stream data: {}", e))
+    }
+
+    /// Get capture statistics (protocol hierarchy, conversations, endpoints)
+    pub fn capture_stats(&self) -> Result<CaptureStats, String> {
+        // Protocol hierarchy stats
+        let phs_result = self.send_request("tap", Some(json!({"tap0": "phs"})))?;
+        let protocol_hierarchy = Self::extract_protocol_hierarchy(&phs_result);
+
+        // TCP conversations
+        let tcp_result = self.send_request("tap", Some(json!({"tap0": "conv:TCP"})))?;
+        let tcp_conversations = Self::extract_conversations(&tcp_result);
+
+        // UDP conversations
+        let udp_result = self.send_request("tap", Some(json!({"tap0": "conv:UDP"})))?;
+        let udp_conversations = Self::extract_conversations(&udp_result);
+
+        // IP endpoints
+        let endpoints_result = self.send_request("tap", Some(json!({"tap0": "endp:IPv4"})))?;
+        let endpoints = Self::extract_endpoints(&endpoints_result);
+
+        Ok(CaptureStats {
+            protocol_hierarchy,
+            tcp_conversations,
+            udp_conversations,
+            endpoints,
+        })
+    }
+
+    /// Extract protocol hierarchy from tap result
+    fn extract_protocol_hierarchy(result: &Value) -> Vec<ProtocolNode> {
+        result
+            .get("taps")
+            .and_then(|taps| taps.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|tap| tap.get("proto"))
+            .and_then(|proto| serde_json::from_value(proto.clone()).ok())
+            .unwrap_or_default()
+    }
+
+    /// Extract conversations from tap result
+    fn extract_conversations(result: &Value) -> Vec<Conversation> {
+        result
+            .get("taps")
+            .and_then(|taps| taps.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|tap| tap.get("convs"))
+            .and_then(|convs| serde_json::from_value(convs.clone()).ok())
+            .unwrap_or_default()
+    }
+
+    /// Extract endpoints from tap result
+    fn extract_endpoints(result: &Value) -> Vec<Endpoint> {
+        result
+            .get("taps")
+            .and_then(|taps| taps.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|tap| tap.get("hosts"))
+            .and_then(|hosts| serde_json::from_value(hosts.clone()).ok())
+            .unwrap_or_default()
     }
 }

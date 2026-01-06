@@ -65,7 +65,7 @@
 
 .start-sidecar-btn {
   padding: 10px 20px;
-  background: var(--accent-color, #3b82f6);
+  background: var(--accent-blue);
   color: white;
   border: none;
   border-radius: 6px;
@@ -76,7 +76,7 @@
 }
 
 .start-sidecar-btn:hover:not(:disabled) {
-  background: var(--accent-hover, #2563eb);
+  filter: brightness(1.1);
 }
 
 .start-sidecar-btn:disabled {
@@ -85,7 +85,7 @@
 }
 
 .error-text {
-  color: var(--error-color, #ef4444);
+  color: var(--accent-red);
   font-size: 12px;
   margin-top: 8px;
 }
@@ -161,7 +161,7 @@
 }
 
 .chat-message.user .message-content {
-  background: var(--accent-color, #3b82f6);
+  background: var(--accent-blue);
   color: white;
   border-radius: 12px 12px 4px 12px;
 }
@@ -173,8 +173,8 @@
 }
 
 .chat-message.system .message-content {
-  background: var(--warning-bg, #fef3c7);
-  color: var(--warning-text, #92400e);
+  background: color-mix(in srgb, var(--accent-orange) 15%, var(--bg-secondary));
+  color: var(--accent-orange);
   border-radius: 8px;
   font-size: 12px;
 }
@@ -196,7 +196,7 @@
   display: inline-block;
   width: 8px;
   height: 8px;
-  background: var(--accent-color);
+  background: var(--accent-blue);
   border-radius: 50%;
   margin-right: 8px;
   animation: pulse 1s ease-in-out infinite;
@@ -231,7 +231,7 @@
 
 .chat-input:focus {
   outline: none;
-  border-color: var(--accent-color, #3b82f6);
+  border-color: var(--accent-blue);
 }
 
 .chat-input::placeholder {
@@ -245,7 +245,7 @@
 
 .send-button {
   padding: 10px 16px;
-  background: var(--accent-color, #3b82f6);
+  background: var(--accent-blue);
   color: white;
   border: none;
   border-radius: 8px;
@@ -256,7 +256,7 @@
 }
 
 .send-button:hover:not(:disabled) {
-  background: var(--accent-hover, #2563eb);
+  filter: brightness(1.1);
 }
 
 .send-button:disabled {
