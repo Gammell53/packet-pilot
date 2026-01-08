@@ -6,9 +6,21 @@ export interface AppSettings {
   model: string;
 }
 
+const DEFAULT_MODEL = "google/gemini-3-flash-preview";
+
+// Models that are valid for the sidecar
+const VALID_MODELS = [
+  "google/gemini-3-flash-preview",
+];
+
+function getValidModel(model: string | null | undefined): string {
+  if (!model) return DEFAULT_MODEL;
+  return VALID_MODELS.includes(model) ? model : DEFAULT_MODEL;
+}
+
 const DEFAULT_SETTINGS: AppSettings = {
   apiKey: null,
-  model: "xiaomi/mimo-v2-flash:free",
+  model: DEFAULT_MODEL,
 };
 
 // Use LazyStore for settings persistence
@@ -16,7 +28,7 @@ const store = new LazyStore("settings.json", {
   autoSave: true,
   defaults: {
     apiKey: null,
-    model: "xiaomi/mimo-v2-flash:free",
+    model: "google/gemini-3-flash-preview",
   },
 });
 
@@ -33,11 +45,18 @@ export function useSettings() {
         if (!apiKey) {
           apiKey = await store.get<string>("openrouterApiKey");
         }
-        const model = await store.get<string>("model") ?? await store.get<string>("aiModel");
+        const storedModel = await store.get<string>("model") ?? await store.get<string>("aiModel");
+        const validatedModel = getValidModel(storedModel);
+
+        // If stored model was invalid, save the corrected one
+        if (storedModel && storedModel !== validatedModel) {
+          console.log(`Migrating invalid model "${storedModel}" to "${validatedModel}"`);
+          await store.set("model", validatedModel);
+        }
 
         setSettings({
           apiKey: apiKey ?? null,
-          model: model ?? DEFAULT_SETTINGS.model,
+          model: validatedModel,
         });
       } catch (error) {
         console.error("Failed to load settings:", error);
@@ -65,8 +84,9 @@ export function useSettings() {
 
   const updateModel = useCallback(async (model: string) => {
     try {
-      await store.set("model", model);
-      setSettings((prev) => ({ ...prev, model }));
+      const validatedModel = getValidModel(model);
+      await store.set("model", validatedModel);
+      setSettings((prev) => ({ ...prev, model: validatedModel }));
     } catch (error) {
       console.error("Failed to save model:", error);
       throw error;

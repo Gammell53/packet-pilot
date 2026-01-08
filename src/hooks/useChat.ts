@@ -3,7 +3,30 @@ import type { ChatMessage, CaptureContext, AnalyzeResponse } from "../types";
 
 const SIDECAR_URL = "http://127.0.0.1:8765";
 
-export function useChat(context: CaptureContext) {
+interface UseChatOptions {
+  context: CaptureContext;
+  model?: string;
+}
+
+// Convert message to API format (snake_case, strip unnecessary fields)
+function toApiMessage(msg: ChatMessage) {
+  return {
+    id: msg.id,
+    role: msg.role,
+    content: msg.content,
+    timestamp: msg.timestamp,
+    context: msg.context ? {
+      selected_packet_id: msg.context.selectedPacketId,
+      selected_stream_id: msg.context.selectedStreamId,
+      visible_range: msg.context.visibleRange,
+      current_filter: msg.context.currentFilter,
+      file_name: msg.context.fileName,
+      total_frames: msg.context.totalFrames,
+    } : null,
+  };
+}
+
+export function useChat({ context, model }: UseChatOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -34,7 +57,8 @@ export function useChat(context: CaptureContext) {
               file_name: context.fileName,
               total_frames: context.totalFrames,
             },
-            conversation_history: messages.slice(-10),
+            conversation_history: messages.slice(-10).map(toApiMessage),
+            model: model || undefined,
           }),
         });
 
@@ -64,7 +88,7 @@ export function useChat(context: CaptureContext) {
         setIsLoading(false);
       }
     },
-    [context, messages]
+    [context, messages, model]
   );
 
   const clearHistory = useCallback(() => {

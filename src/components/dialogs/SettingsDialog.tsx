@@ -10,23 +10,17 @@ interface SettingsDialogProps {
   onSaveModel: (model: string) => Promise<void>;
 }
 
-// Top models from OpenRouter rankings by usage (updated Jan 2026)
+// Supported models
 const OPENROUTER_MODELS = [
-  // Free tier
-  { id: "xiaomi/mimo-v2-flash:free", name: "MiMo-V2-Flash (free)", provider: "Free" },
-  { id: "mistralai/devstral-2512:free", name: "Devstral 2 (free)", provider: "Free" },
-  { id: "nvidia/nemotron-3-nano-30b-a3b:free", name: "Nemotron 3 Nano (free)", provider: "Free" },
-  // Google
-  { id: "google/gemini-3-flash-preview", name: "Gemini 3 Flash", provider: "Google" },
-  { id: "google/gemini-2.5-flash-preview-05-20", name: "Gemini 2.5 Flash", provider: "Google" },
-  // xAI
-  { id: "x-ai/grok-3-fast", name: "Grok 3 Fast", provider: "xAI" },
-  // DeepSeek
-  { id: "deepseek/deepseek-chat-v3-0324", name: "DeepSeek V3", provider: "DeepSeek" },
-  // Anthropic
-  { id: "anthropic/claude-sonnet-4", name: "Claude Sonnet 4", provider: "Anthropic" },
-  { id: "anthropic/claude-opus-4", name: "Claude Opus 4", provider: "Anthropic" },
+  { id: "google/gemini-3-flash-preview", name: "Gemini 3 Flash Preview", provider: "Google" },
 ];
+
+const DEFAULT_MODEL = OPENROUTER_MODELS[0].id;
+
+function getValidModel(model: string): string {
+  const isValid = OPENROUTER_MODELS.some((m) => m.id === model);
+  return isValid ? model : DEFAULT_MODEL;
+}
 
 export function SettingsDialog({
   isOpen,
@@ -47,7 +41,7 @@ export function SettingsDialog({
   useEffect(() => {
     if (isOpen) {
       setApiKey(currentApiKey ?? "");
-      setModel(currentModel);
+      setModel(getValidModel(currentModel));
       setShowApiKey(false);
       setError(null);
       setSaved(false);
