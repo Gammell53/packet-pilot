@@ -226,8 +226,9 @@ fn spawn_dev_sidecar(
         "8765",
     ])
     .current_dir(&sidecar_path)
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped());
+    // In dev mode, inherit stdout/stderr to see logs in terminal
+    .stdout(Stdio::inherit())
+    .stderr(Stdio::inherit());
 
     // Pass OpenRouter API key
     if let Some(key) = api_key {

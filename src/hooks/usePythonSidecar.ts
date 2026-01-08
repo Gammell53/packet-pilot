@@ -42,7 +42,7 @@ export function usePythonSidecar() {
     try {
       const result = await invoke<TauriSidecarStatus>("start_ai_sidecar", {
         apiKey: apiKey ?? null,
-        model: model ?? "xiaomi/mimo-v2-flash:free",
+        model: model ?? "google/gemini-3-flash-preview",
       });
       setStatus({
         is_running: result.is_running,

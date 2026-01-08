@@ -1,10 +1,50 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState, useCallback } from "react";
 import { ChatMessage } from "./ChatMessage";
 import { ChatInput } from "./ChatInput";
 import { useChat } from "../../hooks/useChat";
 import { usePythonSidecar } from "../../hooks/usePythonSidecar";
 import type { CaptureContext } from "../../types";
 import "./ChatSidebar.css";
+
+function getErrorInfo(error: string): { message: string; hint: string } {
+  const errorLower = error.toLowerCase();
+
+  if (errorLower.includes("python") || errorLower.includes("not found")) {
+    return {
+      message: "Python environment issue",
+      hint: "Ensure Python is installed and accessible",
+    };
+  }
+  if (errorLower.includes("port") || errorLower.includes("address already in use")) {
+    return {
+      message: "Port conflict",
+      hint: "Another process is using port 8765. Try restarting the app.",
+    };
+  }
+  if (errorLower.includes("timeout") || errorLower.includes("timed out")) {
+    return {
+      message: "Startup timed out",
+      hint: "The AI service took too long to start. Try again.",
+    };
+  }
+  if (errorLower.includes("api") || errorLower.includes("key") || errorLower.includes("401") || errorLower.includes("unauthorized")) {
+    return {
+      message: "API key issue",
+      hint: "Check your OpenRouter API key in Settings",
+    };
+  }
+  if (errorLower.includes("network") || errorLower.includes("connection") || errorLower.includes("fetch")) {
+    return {
+      message: "Connection failed",
+      hint: "Check your internet connection",
+    };
+  }
+
+  return {
+    message: "Failed to start",
+    hint: error.length > 80 ? error.slice(0, 80) + "..." : error,
+  };
+}
 
 interface ChatSidebarProps {
   isOpen: boolean;
@@ -39,6 +79,39 @@ export function ChatSidebar({
 }: ChatSidebarProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { status, start: startSidecar, isStarting } = usePythonSidecar();
+  const [sidebarWidth, setSidebarWidth] = useState(380);
+
+  // Resize handler for draggable left edge
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+
+    const onMouseMove = (e: MouseEvent) => {
+      const delta = startX - e.clientX;
+      const newWidth = Math.max(320, Math.min(800, startWidth + delta));
+      setSidebarWidth(newWidth);
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.body.style.cursor = "ew-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }, [sidebarWidth]);
+
+  // Auto-start sidecar when sidebar opens and API key exists
+  useEffect(() => {
+    if (isOpen && hasApiKey && !status.is_running && !isStarting) {
+      startSidecar(apiKey, model);
+    }
+  }, [isOpen, hasApiKey, status.is_running, isStarting, apiKey, model, startSidecar]);
 
   const handleStartSidecar = () => {
     startSidecar(apiKey, model);
@@ -53,7 +126,7 @@ export function ChatSidebar({
     totalFrames,
   };
 
-  const { messages, isLoading, sendMessage, clearHistory } = useChat(context);
+  const { messages, isLoading, sendMessage, clearHistory } = useChat({ context, model });
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -82,9 +155,32 @@ export function ChatSidebar({
   if (!isOpen) return null;
 
   return (
-    <div className="chat-sidebar">
+    <div className="chat-sidebar" style={{ width: sidebarWidth }}>
+      <div className="chat-resize-handle" onMouseDown={handleResizeStart} />
       <div className="chat-header">
-        <h3>PacketPilot AI</h3>
+        <div className="chat-header-title">
+          <span
+            className={`status-dot ${
+              status.is_running
+                ? "status-running"
+                : isStarting
+                ? "status-starting"
+                : status.error
+                ? "status-error"
+                : "status-offline"
+            }`}
+            title={
+              status.is_running
+                ? "AI assistant is running"
+                : isStarting
+                ? "Starting..."
+                : status.error
+                ? "Error - click Settings to troubleshoot"
+                : "AI assistant is offline"
+            }
+          />
+          <h3>PacketPilot AI</h3>
+        </div>
         <div className="chat-header-actions">
           <button
             className="icon-button"
@@ -109,15 +205,29 @@ export function ChatSidebar({
         </div>
       ) : !status.is_running ? (
         <div className="chat-sidecar-status">
-          <p>AI assistant is not running</p>
-          <button
-            className="start-sidecar-btn"
-            onClick={handleStartSidecar}
-            disabled={isStarting}
-          >
-            {isStarting ? "Starting..." : "Start AI Assistant"}
-          </button>
-          {status.error && <p className="error-text">{status.error}</p>}
+          {isStarting ? (
+            <div className="starting-container">
+              <div className="starting-spinner" />
+              <p className="starting-title">Starting AI assistant</p>
+              <p className="starting-hint">This may take a few seconds...</p>
+            </div>
+          ) : (
+            <>
+              <p>AI assistant is not running</p>
+              <button
+                className="start-sidecar-btn"
+                onClick={handleStartSidecar}
+              >
+                Start AI Assistant
+              </button>
+            </>
+          )}
+          {status.error && (
+            <div className="error-box">
+              <p className="error-title">{getErrorInfo(status.error).message}</p>
+              <p className="error-hint">{getErrorInfo(status.error).hint}</p>
+            </div>
+          )}
           <button className="settings-link" onClick={onOpenSettings}>
             Settings
           </button>

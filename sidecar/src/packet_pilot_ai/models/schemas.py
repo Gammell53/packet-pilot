@@ -28,6 +28,7 @@ class AnalyzeRequest(BaseModel):
     query: str
     context: CaptureContext
     conversation_history: list[ChatMessage] = []
+    model: Optional[str] = None  # Optional model override
 
 
 class AnalyzeResponse(BaseModel):
