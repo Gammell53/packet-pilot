@@ -123,10 +123,12 @@ Write-Host "Copying DLL dependencies..."
 $CopiedCount = 0
 $MissingDlls = @()
 
+# On Windows, DLLs must be in the same directory as the executable
+# Copy them to OutputDir (same as sharkd.exe), not a subdirectory
 foreach ($dll in $RequiredDlls) {
     $dllPath = Join-Path $WiresharkDir $dll
     if (Test-Path $dllPath) {
-        Copy-Item $dllPath $LibsDir -Force
+        Copy-Item $dllPath $OutputDir -Force
         $CopiedCount++
     } else {
         $MissingDlls += $dll
@@ -136,14 +138,14 @@ foreach ($dll in $RequiredDlls) {
 # Also copy any other DLLs in the Wireshark directory (catch-all)
 $AllDlls = Get-ChildItem -Path $WiresharkDir -Filter "*.dll" -ErrorAction SilentlyContinue
 foreach ($dll in $AllDlls) {
-    $destPath = Join-Path $LibsDir $dll.Name
+    $destPath = Join-Path $OutputDir $dll.Name
     if (-not (Test-Path $destPath)) {
         Copy-Item $dll.FullName $destPath -Force
         $CopiedCount++
     }
 }
 
-Write-Host "Copied $CopiedCount DLLs to $LibsDir"
+Write-Host "Copied $CopiedCount DLLs to $OutputDir (same directory as sharkd.exe)"
 
 if ($MissingDlls.Count -gt 0) {
     Write-Host ""
@@ -159,7 +161,5 @@ $TotalSizeMB = [math]::Round($TotalSize / 1MB, 2)
 Write-Host ""
 Write-Host "Bundle complete!"
 Write-Host "  sharkd binary: $DestSharkd"
-Write-Host "  Dependencies:  $LibsDir\"
+Write-Host "  Dependencies:  $OutputDir\"
 Write-Host "  Total size:    $TotalSizeMB MB"
-Write-Host ""
-Write-Host "Note: The Tauri app will need to add sharkd-libs to PATH or copy DLLs alongside sharkd."

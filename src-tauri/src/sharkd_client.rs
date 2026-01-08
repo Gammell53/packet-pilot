@@ -271,12 +271,31 @@ fn find_sharkd() -> Result<PathBuf, String> {
     }
 
     // Fall back to system sharkd (development mode or if bundled not found)
-    if let Ok(output) = std::process::Command::new("which").arg("sharkd").output() {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() {
-                println!("Using system sharkd: {}", path);
-                return Ok(PathBuf::from(path));
+    #[cfg(target_os = "windows")]
+    {
+        // On Windows, check standard Wireshark installation paths
+        let windows_paths = [
+            r"C:\Program Files\Wireshark\sharkd.exe",
+            r"C:\Program Files (x86)\Wireshark\sharkd.exe",
+        ];
+        for path in &windows_paths {
+            let path_buf = PathBuf::from(path);
+            if path_buf.exists() {
+                println!("Found system sharkd at: {}", path);
+                return Ok(path_buf);
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Ok(output) = std::process::Command::new("which").arg("sharkd").output() {
+            if output.status.success() {
+                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !path.is_empty() {
+                    println!("Using system sharkd: {}", path);
+                    return Ok(PathBuf::from(path));
+                }
             }
         }
     }
