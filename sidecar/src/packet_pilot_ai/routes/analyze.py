@@ -116,11 +116,22 @@ async def analyze_stream(request: AnalyzeRequest):
         except AIServiceError as e:
             log(f"AIServiceError during stream: {e.user_message}")
             yield f"data: {json.dumps({'error': e.user_message})}\n\n"
+        except (BlockingIOError, ConnectionResetError, BrokenPipeError) as e:
+            # Client disconnected - this is normal, just stop streaming
+            log(f"Client disconnected during stream: {type(e).__name__}")
+            return
+        except GeneratorExit:
+            # Client closed connection - normal behavior
+            log("Stream cancelled by client")
+            return
         except Exception as e:
             log(f"Unexpected error during stream: {type(e).__name__}: {e}")
             import traceback
             traceback.print_exc()
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            try:
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            except Exception:
+                pass  # Client already disconnected
 
     return StreamingResponse(
         generate(),

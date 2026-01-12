@@ -700,8 +700,9 @@ async def call_llm_streaming(
             # Yield a marker that tools were executed (UI can show this)
             yield "\n\n"  # Small visual break before continuing
 
-        # If we exhausted iterations
+        # If we exhausted iterations, yield a helpful message
         log(f"WARNING: Exhausted {max_iterations} streaming iterations")
+        yield "\n\n*I've searched extensively but couldn't find the specific information. Try rephrasing your question or being more specific about what you're looking for.*"
 
     except AuthenticationError as e:
         log(f"AuthenticationError: {e}")
