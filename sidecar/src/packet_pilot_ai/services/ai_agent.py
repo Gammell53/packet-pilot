@@ -25,21 +25,119 @@ from .rust_bridge import (
 
 # Tool definitions for AI function calling
 TOOLS = [
+    # === OVERVIEW TOOLS (start here for exploration) ===
+    {
+        "type": "function",
+        "function": {
+            "name": "get_capture_overview",
+            "description": """Get a high-level overview of the entire capture.
+
+RETURNS: Total packets, duration, protocol hierarchy, conversation counts, endpoint counts.
+
+WHEN TO USE: Start here when you need to understand the capture before drilling down.
+- "What's in this capture?"
+- "Give me an overview"
+- "What protocols are being used?"
+- Any exploratory analysis
+
+EXAMPLE: User asks "What kind of traffic is in this capture?" -> Use this first, then search for specific protocols.""",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_conversations",
+            "description": """List network conversations (connections between endpoints).
+
+RETURNS: TCP and/or UDP conversations with addresses, ports, packet/byte counts.
+
+WHEN TO USE: When you need to see who is talking to whom.
+- "Show me the connections"
+- "What hosts are communicating?"
+- "Find the largest data transfers"
+- "Who is this IP talking to?"
+
+EXAMPLE: User asks about connections from 192.168.1.100 -> Use this to list conversations.""",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "protocol": {
+                        "type": "string",
+                        "enum": ["tcp", "udp", "both"],
+                        "description": "Filter by protocol (default: both)",
+                        "default": "both"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max conversations to return (default 20)",
+                        "default": 20
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_endpoints",
+            "description": """List top network endpoints (hosts) by traffic volume.
+
+RETURNS: IP addresses with packets sent/received and bytes sent/received.
+
+WHEN TO USE: When you need to identify the most active hosts.
+- "What are the busiest hosts?"
+- "Who is sending the most data?"
+- "List all IPs in this capture"
+- "Find the top talkers"
+
+EXAMPLE: User asks "Which host is generating the most traffic?" -> Use this.""",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max endpoints to return (default 20)",
+                        "default": 20
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    # === SEARCH & INSPECT TOOLS (drill down) ===
     {
         "type": "function",
         "function": {
             "name": "search_packets",
-            "description": "Search packets using a Wireshark display filter expression. Use this to find specific packets matching criteria like protocol, IP addresses, ports, or flags.",
+            "description": """Search packets using a Wireshark display filter expression.
+
+RETURNS: List of matching packets with frame number, protocol, addresses, and info.
+
+WHEN TO USE: When you need to find specific packets. Use after overview to drill down.
+
+FILTER EXAMPLES:
+- Protocol: 'http', 'dns', 'tcp', 'tls'
+- IP: 'ip.addr == 192.168.1.1', 'ip.src == 10.0.0.1'
+- Port: 'tcp.port == 443', 'udp.port == 53'
+- Flags: 'tcp.flags.syn == 1', 'tcp.flags.rst == 1'
+- Combined: 'http.request && ip.dst == 10.0.0.1'
+- Content: 'http.request.uri contains "api"'""",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "filter": {
                         "type": "string",
-                        "description": "Wireshark display filter expression (e.g., 'http.request', 'tcp.port == 443', 'ip.src == 192.168.1.1')"
+                        "description": "Wireshark display filter (e.g., 'http.request', 'tcp.port == 443')"
                     },
                     "limit": {
                         "type": "integer",
-                        "description": "Maximum number of packets to return (default 50)",
+                        "description": "Max packets to return (default 50)",
                         "default": 50
                     }
                 },
@@ -51,13 +149,22 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "get_stream",
-            "description": "Reconstruct and return the full content of a TCP, UDP, or HTTP stream/conversation. Use this to see what data was exchanged between two endpoints.",
+            "description": """Reconstruct the full content of a TCP, UDP, or HTTP conversation.
+
+RETURNS: Complete data exchanged between client and server.
+
+WHEN TO USE: When you need to see actual payload data, not just headers.
+- "What data was sent to the server?"
+- "Show me the HTTP response body"
+- "What did they download?"
+
+WORKFLOW: First search_packets to find traffic, note the stream number, then use this.""",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "stream_id": {
                         "type": "integer",
-                        "description": "Stream index number (e.g., 0 for the first TCP stream)"
+                        "description": "Stream index (from packet info, e.g., tcp.stream=0)"
                     },
                     "protocol": {
                         "type": "string",
@@ -74,31 +181,48 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "get_packet_details",
-            "description": "Get detailed protocol dissection for a specific packet by frame number.",
+            "description": """Get detailed protocol dissection for a specific packet.
+
+RETURNS: Full protocol tree with all layers and field values.
+
+WHEN TO USE: When you need to examine one packet in detail.
+- After finding a packet of interest via search
+- To see all protocol fields and flags
+- To examine packet payload""",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "packet_num": {
                         "type": "integer",
-                        "description": "Frame number of the packet to examine"
+                        "description": "Frame number of the packet"
                     }
                 },
                 "required": ["packet_num"]
             }
         }
     },
+    # === ANALYSIS TOOLS ===
     {
         "type": "function",
         "function": {
             "name": "find_anomalies",
-            "description": "Detect network anomalies and potential issues in the capture. Searches for retransmissions, resets, malformed packets, DNS errors, HTTP errors, etc. Use this for a quick health check or to identify problems.",
+            "description": """Detect network anomalies and issues in the capture.
+
+RETURNS: Summary of issues with severity and sample packets.
+
+WHEN TO USE: For quick health checks or troubleshooting.
+- "Is there anything wrong?"
+- "Why is it slow?"
+- "Are there any errors?"
+
+DETECTS: retransmissions, duplicate ACKs, resets, zero window, malformed packets, ICMP errors, DNS errors, HTTP 4xx/5xx, TLS alerts""",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "types": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Optional list of anomaly types to search for. If not specified, searches all types. Valid types: retransmission, fast_retransmission, duplicate_ack, reset, zero_window, window_full, malformed, icmp_unreachable, dns_error, http_error, tls_alert"
+                        "description": "Specific types to check (omit for all): retransmission, reset, dns_error, http_error, tls_alert, etc."
                     }
                 },
                 "required": []
@@ -109,22 +233,29 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "get_packet_context",
-            "description": "Get a packet with surrounding context. Shows packets before and after the target packet to understand what happened around it. Useful for analyzing sequences, understanding causes/effects, or seeing related traffic.",
+            "description": """Get a packet with surrounding packets for context.
+
+RETURNS: Target packet plus packets before and after it.
+
+WHEN TO USE: To understand what happened around a specific event.
+- "What caused this reset?"
+- "What happened before the error?"
+- Analyzing sequences and timing""",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "packet_num": {
                         "type": "integer",
-                        "description": "Frame number of the packet to examine"
+                        "description": "Frame number of the target packet"
                     },
                     "before": {
                         "type": "integer",
-                        "description": "Number of packets before to include (default 5)",
+                        "description": "Packets before to include (default 5)",
                         "default": 5
                     },
                     "after": {
                         "type": "integer",
-                        "description": "Number of packets after to include (default 5)",
+                        "description": "Packets after to include (default 5)",
                         "default": 5
                     }
                 },
@@ -136,17 +267,24 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "compare_packets",
-            "description": "Compare two packets field by field to see differences. Useful for comparing request/response pairs, identifying what changed between retransmissions, or analyzing similar packets.",
+            "description": """Compare two packets field by field.
+
+RETURNS: Differences between the packets.
+
+WHEN TO USE: To analyze related packets.
+- Compare request vs response
+- Compare original vs retransmission
+- Find what changed between two similar packets""",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "packet_a": {
                         "type": "integer",
-                        "description": "Frame number of the first packet"
+                        "description": "Frame number of first packet"
                     },
                     "packet_b": {
                         "type": "integer",
-                        "description": "Frame number of the second packet"
+                        "description": "Frame number of second packet"
                     }
                 },
                 "required": ["packet_a", "packet_b"]
@@ -329,6 +467,96 @@ async def execute_tool(name: str, arguments: dict) -> str:
 
             return output
 
+        elif name == "get_capture_overview":
+            result = await get_capture_stats()
+            if result:
+                summary = result.get("summary", {})
+                hierarchy = result.get("protocol_hierarchy", [])
+
+                output = "CAPTURE OVERVIEW:\n"
+                output += f"  Total frames: {summary.get('total_frames', 0)}\n"
+                if summary.get('duration'):
+                    output += f"  Duration: {summary.get('duration'):.2f} seconds\n"
+                output += f"  TCP conversations: {summary.get('tcp_conversation_count', 0)}\n"
+                output += f"  UDP conversations: {summary.get('udp_conversation_count', 0)}\n"
+                output += f"  Endpoints: {summary.get('endpoint_count', 0)}\n\n"
+
+                output += "PROTOCOL HIERARCHY:\n"
+                for proto in hierarchy[:10]:
+                    frames = proto.get('frames', 0)
+                    bytes_count = proto.get('bytes', 0)
+                    output += f"  - {proto.get('protocol', '?')}: {frames} packets, {bytes_count} bytes\n"
+                    for child in proto.get('children', [])[:3]:
+                        output += f"    - {child.get('protocol', '?')}: {child.get('frames', 0)} packets\n"
+
+                return output
+            return "Error fetching capture overview"
+
+        elif name == "get_conversations":
+            result = await get_capture_stats()
+            if result:
+                protocol = arguments.get("protocol", "both")
+                limit = arguments.get("limit", 20)
+
+                output = "NETWORK CONVERSATIONS:\n\n"
+
+                if protocol in ["tcp", "both"]:
+                    tcp_convs = result.get("tcp_conversations", [])[:limit]
+                    if tcp_convs:
+                        output += f"TCP CONVERSATIONS ({len(tcp_convs)} shown):\n"
+                        for conv in tcp_convs:
+                            total_bytes = conv.get("rx_bytes", 0) + conv.get("tx_bytes", 0)
+                            total_frames = conv.get("rx_frames", 0) + conv.get("tx_frames", 0)
+                            src = f"{conv.get('src_addr', '?')}:{conv.get('src_port', '?')}"
+                            dst = f"{conv.get('dst_addr', '?')}:{conv.get('dst_port', '?')}"
+                            output += f"  {src} <-> {dst}\n"
+                            output += f"    {total_frames} packets, {total_bytes} bytes\n"
+                        output += "\n"
+
+                if protocol in ["udp", "both"]:
+                    udp_convs = result.get("udp_conversations", [])[:limit]
+                    if udp_convs:
+                        output += f"UDP CONVERSATIONS ({len(udp_convs)} shown):\n"
+                        for conv in udp_convs:
+                            total_bytes = conv.get("rx_bytes", 0) + conv.get("tx_bytes", 0)
+                            total_frames = conv.get("rx_frames", 0) + conv.get("tx_frames", 0)
+                            src = f"{conv.get('src_addr', '?')}:{conv.get('src_port', '?')}"
+                            dst = f"{conv.get('dst_addr', '?')}:{conv.get('dst_port', '?')}"
+                            output += f"  {src} <-> {dst}\n"
+                            output += f"    {total_frames} packets, {total_bytes} bytes\n"
+
+                if output.strip() == "NETWORK CONVERSATIONS:":
+                    return "No conversations found"
+                return output
+            return "Error fetching conversations"
+
+        elif name == "get_endpoints":
+            result = await get_capture_stats()
+            if result:
+                limit = arguments.get("limit", 20)
+                endpoints = result.get("endpoints", [])[:limit]
+
+                if endpoints:
+                    # Sort by total traffic
+                    sorted_endpoints = sorted(
+                        endpoints,
+                        key=lambda e: e.get("rx_bytes", 0) + e.get("tx_bytes", 0),
+                        reverse=True
+                    )
+                    output = f"TOP ENDPOINTS ({len(sorted_endpoints)} shown):\n\n"
+                    for ep in sorted_endpoints:
+                        total_bytes = ep.get("rx_bytes", 0) + ep.get("tx_bytes", 0)
+                        total_frames = ep.get("rx_frames", 0) + ep.get("tx_frames", 0)
+                        host = ep.get("host", "?")
+                        port = ep.get("port")
+                        addr = f"{host}:{port}" if port else host
+                        output += f"  {addr}:\n"
+                        output += f"    TX: {ep.get('tx_frames', 0)} pkts, {ep.get('tx_bytes', 0)} bytes\n"
+                        output += f"    RX: {ep.get('rx_frames', 0)} pkts, {ep.get('rx_bytes', 0)} bytes\n"
+                    return output
+                return "No endpoints found"
+            return "Error fetching endpoints"
+
         return f"Unknown tool: {name}"
     except Exception as e:
         return f"Tool error: {str(e)}"
@@ -368,38 +596,52 @@ def get_openrouter_client() -> AsyncOpenAI:
     return openai_client
 
 
-SYSTEM_PROMPT = """You are PacketPilot AI, an expert network packet analyst assistant. You help users understand network traffic captured in PCAP files.
+SYSTEM_PROMPT = """You are PacketPilot AI, an expert network packet analyst. You help users understand network traffic in PCAP files.
 
-You have access to these tools to explore the packet capture:
-- search_packets(filter, limit): Search for packets using Wireshark display filters
-- get_stream(stream_id, protocol): Reconstruct TCP/UDP/HTTP stream conversations
-- get_packet_details(packet_num): Get detailed protocol dissection for a specific packet
-- find_anomalies(types): Detect network issues like retransmissions, resets, errors. Great for quick health checks.
-- get_packet_context(packet_num, before, after): Get a packet with surrounding context to see what happened before/after
-- compare_packets(packet_a, packet_b): Compare two packets field by field to find differences
+## YOUR APPROACH: Progressive Exploration
 
-Your capabilities:
-- Analyze packet captures to identify patterns, issues, and anomalies
-- Explain network protocols and their behavior
-- Generate Wireshark display filters from natural language descriptions
-- Identify potential security issues or performance problems
-- Summarize network conversations and streams
-- Search for specific packets and examine their contents
-- Follow and analyze TCP/UDP streams
-- Run health checks to find network problems (retransmissions, resets, DNS errors, etc.)
-- Show context around specific packets (what happened before/after)
-- Compare packets to identify differences (useful for request/response or retransmissions)
+When analyzing a capture, explore progressively - start broad, then drill down:
 
-When analyzing packets, consider:
-- Protocol layers (Ethernet, IP, TCP/UDP, Application)
-- Source and destination addresses/ports
-- Packet timing and sequence
-- Error conditions and retransmissions
-- Common attack patterns
+1. **Start with Overview** (for open-ended questions like "what's in this capture?"):
+   - get_capture_overview: See protocols, conversation counts, duration
+   - get_conversations: See who is talking to whom
+   - get_endpoints: Find the busiest hosts
 
-When you need specific information about the capture, USE YOUR TOOLS to search for packets or examine streams. Don't just guess - search and verify.
+2. **Drill Down** (once you know what to look for):
+   - search_packets: Find specific traffic with Wireshark filters
+   - get_stream: See actual data exchanged in a conversation
+   - get_packet_details: Examine one packet in full detail
 
-Always provide clear, concise explanations. When suggesting filters, use valid Wireshark display filter syntax."""
+3. **Investigate Issues**:
+   - find_anomalies: Quick health check for problems
+   - get_packet_context: Understand what happened around an event
+   - compare_packets: Find differences between related packets
+
+## TOOLS AVAILABLE
+
+**Overview Tools** - Start here for exploration:
+- get_capture_overview(): Protocol stats, conversation counts, duration
+- get_conversations(protocol, limit): List TCP/UDP connections
+- get_endpoints(limit): Top hosts by traffic
+
+**Search & Inspect** - Drill down into specifics:
+- search_packets(filter, limit): Find packets with Wireshark filters
+- get_stream(stream_id, protocol): Reconstruct conversation content
+- get_packet_details(packet_num): Full protocol dissection
+
+**Analysis Tools**:
+- find_anomalies(types): Detect retransmissions, errors, resets
+- get_packet_context(packet_num, before, after): See surrounding packets
+- compare_packets(packet_a, packet_b): Diff two packets
+
+## KEY PRINCIPLES
+
+- **Don't guess - verify**: Always use tools to confirm your analysis
+- **Be efficient**: Start broad, narrow down based on what you find
+- **Explain your reasoning**: Tell the user what you're looking for and why
+- **Suggest filters**: When relevant, provide Wireshark filters users can apply
+
+When analyzing, consider: protocol layers, addresses/ports, timing, retransmissions, and security patterns."""
 
 
 import sys
@@ -745,15 +987,13 @@ async def analyze_packets(
     if context.selected_packet_id:
         context_parts.append(f"Selected packet: #{context.selected_packet_id}")
 
-    context_str = "\n".join(context_parts) if context_parts else "No capture loaded"
+    context_str = " | ".join(context_parts) if context_parts else "No capture loaded"
 
-    # Build packet data context
+    # Only include selected packet details if user explicitly selected one
+    # (visible_frames removed - let agent request via tools for progressive disclosure)
     packet_context = ""
     if packet_data.get("selected_packet"):
-        packet_context += f"\n\nSelected packet details:\n{_format_packet(packet_data['selected_packet'])}"
-    if packet_data.get("visible_frames"):
-        frames_summary = _summarize_frames(packet_data["visible_frames"])
-        packet_context += f"\n\nVisible frames summary:\n{frames_summary}"
+        packet_context = f"\n\nUser-selected packet #{context.selected_packet_id} details:\n{_format_packet(packet_data['selected_packet'])}"
 
     # Build messages from history
     messages = []
@@ -762,11 +1002,9 @@ async def analyze_packets(
             messages.append({"role": msg.role, "content": msg.content})
 
     # Add current query with context
-    user_message = f"""Capture Context:
-{context_str}
-{packet_context}
+    user_message = f"""Capture: {context_str}{packet_context}
 
-User query: {query}"""
+Query: {query}"""
 
     messages.append({"role": "user", "content": user_message})
 
@@ -808,27 +1046,24 @@ async def stream_analyze_packets(
     Supports tool calling: when the AI needs to search packets, follow streams,
     or use other tools, it will execute them and continue streaming the response.
     """
-    # Build context message (same as analyze_packets)
+    # Build minimal context (same as analyze_packets)
     context_parts = []
 
     if context.file_name:
-        context_parts.append(f"Current file: {context.file_name}")
+        context_parts.append(f"File: {context.file_name}")
     if context.total_frames:
-        context_parts.append(f"Total frames: {context.total_frames}")
+        context_parts.append(f"Total: {context.total_frames} packets")
     if context.current_filter:
-        context_parts.append(f"Active filter: {context.current_filter}")
+        context_parts.append(f"Filter: {context.current_filter}")
     if context.selected_packet_id:
-        context_parts.append(f"Selected packet: #{context.selected_packet_id}")
+        context_parts.append(f"Selected: #{context.selected_packet_id}")
 
-    context_str = "\n".join(context_parts) if context_parts else "No capture loaded"
+    context_str = " | ".join(context_parts) if context_parts else "No capture loaded"
 
-    # Build packet data context
+    # Only include selected packet details if user explicitly selected one
     packet_context = ""
     if packet_data.get("selected_packet"):
-        packet_context += f"\n\nSelected packet details:\n{_format_packet(packet_data['selected_packet'])}"
-    if packet_data.get("visible_frames"):
-        frames_summary = _summarize_frames(packet_data["visible_frames"])
-        packet_context += f"\n\nVisible frames summary:\n{frames_summary}"
+        packet_context = f"\n\nUser-selected packet #{context.selected_packet_id} details:\n{_format_packet(packet_data['selected_packet'])}"
 
     # Build messages from history
     messages = []
@@ -837,11 +1072,9 @@ async def stream_analyze_packets(
             messages.append({"role": msg.role, "content": msg.content})
 
     # Add current query with context
-    user_message = f"""Capture Context:
-{context_str}
-{packet_context}
+    user_message = f"""Capture: {context_str}{packet_context}
 
-User query: {query}"""
+Query: {query}"""
 
     messages.append({"role": "user", "content": user_message})
 

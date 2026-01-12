@@ -354,10 +354,10 @@ async fn capture_stats_handler() -> Json<CaptureStatsResponse> {
 
     let client_guard = get_sharkd().lock();
     if let Some(client) = client_guard.as_ref() {
-        // Get basic status
+        // Get basic status for frame count and duration
         let status = client.status().ok();
 
-        // Get capture statistics
+        // Get capture statistics (single batched sharkd request - 4 taps in 1 call)
         if let Ok(stats) = client.capture_stats() {
             let protocol_hierarchy = convert_protocol_nodes(&stats.protocol_hierarchy);
             let protocol_count = count_protocols(&stats.protocol_hierarchy);
