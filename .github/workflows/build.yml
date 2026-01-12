@@ -122,7 +122,8 @@ jobs:
           cd /c/wireshark-src
 
           echo "=== Installing Wireshark dependencies ==="
-          tools/msys2-setup.sh --install-all
+          # --noconfirm is passed through to pacman
+          tools/msys2-setup.sh --install-all --noconfirm
 
           echo "=== Building sharkd ==="
           mkdir build && cd build
