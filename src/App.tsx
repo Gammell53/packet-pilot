@@ -274,7 +274,7 @@ function App() {
 
       {error && (
         <div className="error-banner">
-          <span>{error}</span>
+          <pre className="error-message">{error}</pre>
           <button onClick={clearError}>×</button>
         </div>
       )}

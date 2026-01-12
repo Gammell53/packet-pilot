@@ -75,11 +75,8 @@ export function useSharkd(): UseSharkdReturn {
           } catch (e) {
             if (i === 9 && !cancelled) {
               const errMsg = e instanceof Error ? e.message : String(e);
-              if (errMsg.includes("sharkd")) {
-                setError("Sharkd not found. Please install Wireshark.");
-              } else {
-                setError(`Failed to initialize sharkd: ${errMsg}`);
-              }
+              // Show full error message including debug info
+              setError(`Failed to initialize sharkd: ${errMsg}`);
             } else {
               await new Promise((resolve) => setTimeout(resolve, 500));
             }
