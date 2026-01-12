@@ -234,43 +234,79 @@ fn get_target_triple() -> &'static str {
 
 /// Find the sharkd binary - tries bundled first (production), then system PATH (dev)
 fn find_sharkd() -> Result<PathBuf, String> {
+    let mut debug_info = Vec::new();
+    debug_info.push("=== Sharkd Detection Debug ===".to_string());
+
     // In production, try bundled sharkd first
-    if let Ok(exe_path) = std::env::current_exe() {
-        let path_str = exe_path.to_string_lossy();
-        let is_production =
-            !path_str.contains("target/debug") && !path_str.contains("target/release");
+    match std::env::current_exe() {
+        Ok(exe_path) => {
+            debug_info.push(format!("Current executable: {:?}", exe_path));
+            let path_str = exe_path.to_string_lossy();
+            let is_production =
+                !path_str.contains("target/debug") && !path_str.contains("target/release");
+            debug_info.push(format!("Is production mode: {}", is_production));
 
-        if is_production {
-            if let Some(exe_dir) = exe_path.parent() {
-                let target_triple = get_target_triple();
+            if is_production {
+                if let Some(exe_dir) = exe_path.parent() {
+                    debug_info.push(format!("Executable directory: {:?}", exe_dir));
+                    let target_triple = get_target_triple();
+                    debug_info.push(format!("Target triple: {}", target_triple));
 
-                // Try the wrapper script first (sets up LD_LIBRARY_PATH)
-                #[cfg(not(target_os = "windows"))]
-                {
-                    let wrapper_name = format!("sharkd-wrapper-{}", target_triple);
-                    let wrapper_path = exe_dir.join(&wrapper_name);
-                    if wrapper_path.exists() {
-                        println!("Using bundled sharkd wrapper at: {:?}", wrapper_path);
-                        return Ok(wrapper_path);
+                    // List all files in exe_dir for debugging
+                    if let Ok(entries) = std::fs::read_dir(exe_dir) {
+                        let files: Vec<String> = entries
+                            .filter_map(|e| e.ok())
+                            .map(|e| e.file_name().to_string_lossy().to_string())
+                            .collect();
+                        debug_info.push(format!("Files in exe_dir ({} total): {:?}", files.len(), files.iter().take(20).collect::<Vec<_>>()));
+                        if files.len() > 20 {
+                            debug_info.push(format!("  ... and {} more files", files.len() - 20));
+                        }
+                    } else {
+                        debug_info.push("Failed to list files in exe_dir".to_string());
                     }
-                }
 
-                // Try direct binary
-                #[cfg(target_os = "windows")]
-                let sidecar_name = format!("sharkd-{}.exe", target_triple);
-                #[cfg(not(target_os = "windows"))]
-                let sidecar_name = format!("sharkd-{}", target_triple);
+                    // Try the wrapper script first (sets up LD_LIBRARY_PATH)
+                    #[cfg(not(target_os = "windows"))]
+                    {
+                        let wrapper_name = format!("sharkd-wrapper-{}", target_triple);
+                        let wrapper_path = exe_dir.join(&wrapper_name);
+                        debug_info.push(format!("Checking wrapper: {:?} (exists: {})", wrapper_path, wrapper_path.exists()));
+                        if wrapper_path.exists() {
+                            println!("{}", debug_info.join("\n"));
+                            println!("Using bundled sharkd wrapper at: {:?}", wrapper_path);
+                            return Ok(wrapper_path);
+                        }
+                    }
 
-                let sidecar_path = exe_dir.join(&sidecar_name);
-                if sidecar_path.exists() {
-                    println!("Found bundled sharkd at: {:?}", sidecar_path);
-                    return Ok(sidecar_path);
+                    // Try direct binary
+                    #[cfg(target_os = "windows")]
+                    let sidecar_name = format!("sharkd-{}.exe", target_triple);
+                    #[cfg(not(target_os = "windows"))]
+                    let sidecar_name = format!("sharkd-{}", target_triple);
+
+                    let sidecar_path = exe_dir.join(&sidecar_name);
+                    debug_info.push(format!("Checking sidecar: {:?} (exists: {})", sidecar_path, sidecar_path.exists()));
+                    if sidecar_path.exists() {
+                        println!("{}", debug_info.join("\n"));
+                        println!("Found bundled sharkd at: {:?}", sidecar_path);
+                        return Ok(sidecar_path);
+                    }
+                } else {
+                    debug_info.push("Failed to get parent directory of executable".to_string());
                 }
+            } else {
+                debug_info.push("Development mode - skipping bundled sharkd check".to_string());
             }
+        }
+        Err(e) => {
+            debug_info.push(format!("Failed to get current executable: {}", e));
         }
     }
 
     // Fall back to system sharkd (development mode or if bundled not found)
+    debug_info.push("Falling back to system sharkd...".to_string());
+
     #[cfg(target_os = "windows")]
     {
         // On Windows, check standard Wireshark installation paths
@@ -280,7 +316,10 @@ fn find_sharkd() -> Result<PathBuf, String> {
         ];
         for path in &windows_paths {
             let path_buf = PathBuf::from(path);
-            if path_buf.exists() {
+            let exists = path_buf.exists();
+            debug_info.push(format!("Checking system path: {} (exists: {})", path, exists));
+            if exists {
+                println!("{}", debug_info.join("\n"));
                 println!("Found system sharkd at: {}", path);
                 return Ok(path_buf);
             }
@@ -293,14 +332,23 @@ fn find_sharkd() -> Result<PathBuf, String> {
             if output.status.success() {
                 let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 if !path.is_empty() {
+                    println!("{}", debug_info.join("\n"));
                     println!("Using system sharkd: {}", path);
                     return Ok(PathBuf::from(path));
                 }
             }
         }
+        debug_info.push("'which sharkd' did not find sharkd in PATH".to_string());
     }
 
-    Err("Sharkd not found. Please install Wireshark.".to_string())
+    // Print all debug info before returning error
+    let debug_output = debug_info.join("\n");
+    eprintln!("{}", debug_output);
+
+    Err(format!(
+        "Sharkd not found. Please install Wireshark.\n\nDebug info:\n{}",
+        debug_output
+    ))
 }
 
 impl SharkdClient {
