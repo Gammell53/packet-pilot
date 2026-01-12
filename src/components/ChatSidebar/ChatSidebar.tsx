@@ -126,7 +126,7 @@ export function ChatSidebar({
     totalFrames,
   };
 
-  const { messages, isLoading, sendMessage, clearHistory } = useChat({ context, model });
+  const { messages, isLoading, sendMessage, clearHistory, regenerateLastResponse, stopGeneration } = useChat({ context, model });
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -252,9 +252,22 @@ export function ChatSidebar({
                 <p className="hint">Or: "What's happening in packet #42?"</p>
               </div>
             )}
-            {messages.map((msg) => (
-              <ChatMessage key={msg.id} message={msg} onAction={handleAction} />
-            ))}
+            {messages.map((msg, index) => {
+              // Check if this is the last assistant message
+              const isLatestAssistant =
+                msg.role === "assistant" &&
+                index === messages.findLastIndex((m) => m.role === "assistant");
+
+              return (
+                <ChatMessage
+                  key={msg.id}
+                  message={msg}
+                  onAction={handleAction}
+                  onRegenerate={regenerateLastResponse}
+                  isLatestAssistant={isLatestAssistant}
+                />
+              );
+            })}
             <div ref={messagesEndRef} />
           </div>
 
@@ -262,6 +275,7 @@ export function ChatSidebar({
             onSend={sendMessage}
             isLoading={isLoading}
             disabled={!status.is_running}
+            onStop={stopGeneration}
           />
         </>
       )}

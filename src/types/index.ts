@@ -126,6 +126,7 @@ export interface ChatMessage {
   timestamp: number;
   context?: CaptureContext;
   isStreaming?: boolean;
+  feedback?: "up" | "down";
 }
 
 export interface AnalyzeRequest {

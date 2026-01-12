@@ -565,6 +565,165 @@ async def call_llm(
         raise
 
 
+from typing import AsyncIterator
+from dataclasses import dataclass, field
+
+
+@dataclass
+class ToolCallAccumulator:
+    """Accumulates tool call deltas from streaming."""
+    id: str
+    name: str = ""
+    arguments: str = ""
+
+
+async def call_llm_streaming(
+    messages: list[dict],
+    system: str,
+    max_tokens: int = 1024,
+    use_tools: bool = False,
+    model_override: str | None = None,
+) -> AsyncIterator[str]:
+    """Call the OpenRouter API with streaming and optional tool support.
+
+    Yields text chunks as they arrive. When tools are enabled:
+    - Streams text from the model
+    - When tool calls are detected, executes them
+    - Makes another streaming request with tool results
+    - Repeats until no more tool calls (max 5 iterations)
+    """
+    client = get_openrouter_client()
+    model = model_override or get_model()
+
+    log(f"LLM streaming request: model={model}, tools={use_tools}")
+
+    # OpenRouter uses OpenAI format - system message goes in messages array
+    full_messages = [{"role": "system", "content": system}] + messages
+
+    max_iterations = 5
+
+    try:
+        for iteration in range(max_iterations):
+            log(f"Streaming iteration {iteration + 1}")
+
+            # Build request kwargs
+            kwargs = {
+                "model": model,
+                "max_tokens": max_tokens,
+                "messages": full_messages,
+                "stream": True,
+            }
+            if use_tools:
+                kwargs["tools"] = TOOLS
+                kwargs["tool_choice"] = "auto"
+
+            stream = await client.chat.completions.create(**kwargs)
+
+            # Accumulate the response
+            accumulated_content = ""
+            tool_calls: dict[int, ToolCallAccumulator] = {}
+
+            async for chunk in stream:
+                if not chunk.choices:
+                    continue
+
+                delta = chunk.choices[0].delta
+
+                # Yield text content immediately
+                if delta.content:
+                    accumulated_content += delta.content
+                    yield delta.content
+
+                # Accumulate tool calls (they come in pieces)
+                if delta.tool_calls:
+                    for tc_delta in delta.tool_calls:
+                        idx = tc_delta.index
+                        if idx not in tool_calls:
+                            tool_calls[idx] = ToolCallAccumulator(
+                                id=tc_delta.id or "",
+                                name=tc_delta.function.name if tc_delta.function and tc_delta.function.name else "",
+                                arguments=tc_delta.function.arguments if tc_delta.function and tc_delta.function.arguments else "",
+                            )
+                        else:
+                            # Append to existing
+                            if tc_delta.id:
+                                tool_calls[idx].id = tc_delta.id
+                            if tc_delta.function:
+                                if tc_delta.function.name:
+                                    tool_calls[idx].name += tc_delta.function.name
+                                if tc_delta.function.arguments:
+                                    tool_calls[idx].arguments += tc_delta.function.arguments
+
+            # Check if we have tool calls to execute
+            if not tool_calls:
+                log(f"Streaming complete after {iteration + 1} iterations")
+                return
+
+            # Execute tool calls
+            log(f"Executing {len(tool_calls)} tool calls")
+
+            # Add assistant message with tool calls to history
+            tool_calls_for_message = [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.name,
+                        "arguments": tc.arguments
+                    }
+                }
+                for tc in tool_calls.values()
+            ]
+            full_messages.append({
+                "role": "assistant",
+                "content": accumulated_content or "",
+                "tool_calls": tool_calls_for_message
+            })
+
+            # Execute each tool and add results
+            for tc in tool_calls.values():
+                log(f"Executing tool: {tc.name}")
+                try:
+                    args = json.loads(tc.arguments)
+                    result = await execute_tool(tc.name, args)
+                    log(f"Tool result: {result[:200] if result else 'None'}...")
+                except Exception as e:
+                    result = f"Tool error: {str(e)}"
+                    log(f"Tool error: {e}")
+
+                full_messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": result
+                })
+
+            # Yield a marker that tools were executed (UI can show this)
+            yield "\n\n"  # Small visual break before continuing
+
+        # If we exhausted iterations
+        log(f"WARNING: Exhausted {max_iterations} streaming iterations")
+
+    except AuthenticationError as e:
+        log(f"AuthenticationError: {e}")
+        raise AIServiceError(
+            str(e),
+            "Invalid API key. Please update your OpenRouter API key in Settings."
+        )
+    except APIStatusError as e:
+        log(f"APIStatusError: status_code={e.status_code}")
+        if e.status_code == 401:
+            raise AIServiceError(str(e), "Invalid API key.")
+        elif e.status_code == 402:
+            raise AIServiceError(str(e), "Insufficient credits.")
+        elif e.status_code == 429:
+            raise AIServiceError(str(e), "Rate limit exceeded.")
+        else:
+            raise AIServiceError(str(e), f"AI service error ({e.status_code}).")
+    except Exception as e:
+        log(f"Streaming error: {type(e).__name__}: {e}")
+        raise
+
+
 async def analyze_packets(
     query: str,
     context: CaptureContext,
@@ -634,6 +793,62 @@ User query: {query}"""
         suggested_filter=suggested_filter,
         suggested_action=suggested_action,
     )
+
+
+async def stream_analyze_packets(
+    query: str,
+    context: CaptureContext,
+    packet_data: dict,
+    history: list[ChatMessage],
+    model: str | None = None,
+) -> AsyncIterator[str]:
+    """Stream analyze packets - yields text chunks as they arrive.
+
+    Supports tool calling: when the AI needs to search packets, follow streams,
+    or use other tools, it will execute them and continue streaming the response.
+    """
+    # Build context message (same as analyze_packets)
+    context_parts = []
+
+    if context.file_name:
+        context_parts.append(f"Current file: {context.file_name}")
+    if context.total_frames:
+        context_parts.append(f"Total frames: {context.total_frames}")
+    if context.current_filter:
+        context_parts.append(f"Active filter: {context.current_filter}")
+    if context.selected_packet_id:
+        context_parts.append(f"Selected packet: #{context.selected_packet_id}")
+
+    context_str = "\n".join(context_parts) if context_parts else "No capture loaded"
+
+    # Build packet data context
+    packet_context = ""
+    if packet_data.get("selected_packet"):
+        packet_context += f"\n\nSelected packet details:\n{_format_packet(packet_data['selected_packet'])}"
+    if packet_data.get("visible_frames"):
+        frames_summary = _summarize_frames(packet_data["visible_frames"])
+        packet_context += f"\n\nVisible frames summary:\n{frames_summary}"
+
+    # Build messages from history
+    messages = []
+    for msg in history[-10:]:  # Last 10 messages for context
+        if msg.role in ("user", "assistant"):
+            messages.append({"role": msg.role, "content": msg.content})
+
+    # Add current query with context
+    user_message = f"""Capture Context:
+{context_str}
+{packet_context}
+
+User query: {query}"""
+
+    messages.append({"role": "user", "content": user_message})
+
+    # Stream the response with tool support enabled
+    async for chunk in call_llm_streaming(
+        messages, SYSTEM_PROMPT, max_tokens=1024, use_tools=True, model_override=model
+    ):
+        yield chunk
 
 
 def _format_protocol_hierarchy(hierarchy: list, indent: int = 0) -> str:

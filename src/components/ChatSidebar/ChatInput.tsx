@@ -4,9 +4,10 @@ interface ChatInputProps {
   onSend: (message: string) => void;
   isLoading: boolean;
   disabled?: boolean;
+  onStop?: () => void;
 }
 
-export function ChatInput({ onSend, isLoading, disabled }: ChatInputProps) {
+export function ChatInput({ onSend, isLoading, disabled, onStop }: ChatInputProps) {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -42,13 +43,24 @@ export function ChatInput({ onSend, isLoading, disabled }: ChatInputProps) {
         disabled={isLoading || disabled}
         rows={1}
       />
-      <button
-        type="submit"
-        className="send-button"
-        disabled={!input.trim() || isLoading || disabled}
-      >
-        {isLoading ? "..." : "Send"}
-      </button>
+      {isLoading && onStop ? (
+        <button
+          type="button"
+          className="stop-button"
+          onClick={onStop}
+          title="Stop generation"
+        >
+          Stop
+        </button>
+      ) : (
+        <button
+          type="submit"
+          className="send-button"
+          disabled={!input.trim() || isLoading || disabled}
+        >
+          Send
+        </button>
+      )}
     </form>
   );
 }
