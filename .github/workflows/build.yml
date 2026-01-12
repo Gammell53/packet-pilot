@@ -100,9 +100,135 @@ jobs:
         if: matrix.platform == 'windows-latest'
         run: npm run build:sidecar:win
 
+      - name: Setup MSYS2
+        if: matrix.platform == 'windows-latest'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            base-devel
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+
+      - name: Build sharkd from source (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: msys2 {0}
+        run: |
+          echo "=== Cloning Wireshark source ==="
+          git clone --depth 1 --branch master https://gitlab.com/wireshark/wireshark.git /c/wireshark-src
+          cd /c/wireshark-src
+
+          echo "=== Installing Wireshark dependencies ==="
+          tools/msys2-setup.sh --install-all
+
+          echo "=== Building sharkd ==="
+          mkdir build && cd build
+          cmake -G Ninja \
+            -DBUILD_wireshark=OFF \
+            -DBUILD_tshark=OFF \
+            -DBUILD_sharkd=ON \
+            -DBUILD_dumpcap=OFF \
+            -DBUILD_rawshark=OFF \
+            -DBUILD_editcap=OFF \
+            -DBUILD_capinfos=OFF \
+            -DBUILD_mergecap=OFF \
+            -DBUILD_reordercap=OFF \
+            -DBUILD_text2pcap=OFF \
+            -DBUILD_randpkt=OFF \
+            -DENABLE_CCACHE=ON \
+            ..
+          ninja sharkd
+
+          echo "=== Build complete ==="
+          ls -la run/sharkd.exe || ls -la sharkd.exe || echo "sharkd.exe not found in expected locations"
+
       - name: Bundle sharkd (Windows)
         if: matrix.platform == 'windows-latest'
-        run: npm run build:sharkd:win
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $OutputDir = "src-tauri/binaries"
+          $Target = "x86_64-pc-windows-msvc"
+
+          # Find sharkd.exe from MSYS2 build
+          $SharkdPaths = @(
+            "C:\wireshark-src\build\run\sharkd.exe",
+            "C:\wireshark-src\build\sharkd.exe"
+          )
+
+          $SharkdPath = $null
+          foreach ($path in $SharkdPaths) {
+            if (Test-Path $path) {
+              $SharkdPath = $path
+              break
+            }
+          }
+
+          if (-not $SharkdPath) {
+            Write-Error "sharkd.exe not found after build"
+            exit 1
+          }
+
+          Write-Host "Found sharkd at: $SharkdPath"
+
+          # Create output directory
+          New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+
+          # Copy sharkd with target suffix
+          $DestSharkd = Join-Path $OutputDir "sharkd-$Target.exe"
+          Copy-Item $SharkdPath $DestSharkd -Force
+          Write-Host "Copied sharkd to: $DestSharkd"
+
+          # Copy sharkd-wrapper (same as sharkd on Windows)
+          $DestWrapper = Join-Path $OutputDir "sharkd-wrapper-$Target.exe"
+          Copy-Item $SharkdPath $DestWrapper -Force
+          Write-Host "Copied wrapper to: $DestWrapper"
+
+          # Copy required DLLs from MSYS2 UCRT64
+          $MsysBin = "C:\msys64\ucrt64\bin"
+          $WiresharkBuild = Split-Path $SharkdPath
+
+          # Copy DLLs from Wireshark build directory (if any)
+          if (Test-Path "$WiresharkBuild\*.dll") {
+            Copy-Item "$WiresharkBuild\*.dll" $OutputDir -Force
+            Write-Host "Copied DLLs from Wireshark build"
+          }
+
+          # Core runtime DLLs from MSYS2
+          $CoreDlls = @(
+            "libgcc_s_seh-1.dll",
+            "libstdc++-6.dll",
+            "libwinpthread-1.dll",
+            "libglib-2.0-0.dll",
+            "libgmodule-2.0-0.dll",
+            "libintl-8.dll",
+            "libiconv-2.dll",
+            "libpcre2-8-0.dll",
+            "zlib1.dll",
+            "liblz4.dll",
+            "liblzma-5.dll",
+            "libzstd.dll",
+            "libgcrypt-20.dll",
+            "libgpg-error-0.dll",
+            "libbrotlidec.dll",
+            "libbrotlicommon.dll",
+            "libcares-2.dll"
+          )
+
+          foreach ($dll in $CoreDlls) {
+            $src = Join-Path $MsysBin $dll
+            if (Test-Path $src) {
+              Copy-Item $src $OutputDir -Force
+            }
+          }
+
+          # List what we bundled
+          Write-Host ""
+          Write-Host "=== Bundled files ==="
+          Get-ChildItem $OutputDir | ForEach-Object { Write-Host $_.Name }
 
       # ============================================
       # Common build steps
