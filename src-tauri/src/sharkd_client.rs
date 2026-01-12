@@ -172,7 +172,7 @@ pub struct TapResultItem {
 }
 
 /// Complete capture statistics
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CaptureStats {
     pub protocol_hierarchy: Vec<ProtocolNode>,
     pub tcp_conversations: Vec<Conversation>,
@@ -551,42 +551,46 @@ impl SharkdClient {
         Ok(result.get("err").is_none())
     }
 
-    /// Set a display filter and get matching frames
-    pub fn set_filter(&self, filter: &str) -> Result<(), String> {
-        let result = self.send_request("setfilter", Some(json!({ "filter": filter })))?;
-
-        if let Some(err) = result.get("err") {
-            if err.as_i64() != Some(0) {
-                return Err(format!("Failed to set filter: {:?}", err));
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Search frames with a display filter - applies filter and returns matching frames
+    /// Search frames with a display filter - passes filter to frames request
     pub fn search_frames(
         &self,
         filter: &str,
         skip: u32,
         limit: u32,
     ) -> Result<(Vec<Frame>, u64), String> {
-        // First apply the filter
-        self.set_filter(filter)?;
+        // Build the frames request with filter
+        // Note: sharkd requires skip > 0 if present, so omit when 0
+        let params = if skip > 0 {
+            json!({
+                "filter": filter,
+                "skip": skip,
+                "limit": limit
+            })
+        } else {
+            json!({
+                "filter": filter,
+                "limit": limit
+            })
+        };
 
-        // Get the filtered frame count via status
-        let status = self.status()?;
-        let total = status.frames.unwrap_or(0);
+        let result = self.send_request("frames", Some(params))?;
 
-        // Get the matching frames
-        let frames = self.frames(skip, limit)?;
+        // sharkd returns frames as an array directly, or as {"frames": [...]}
+        let frames: Vec<Frame> = if result.is_array() {
+            serde_json::from_value(result.clone())
+                .map_err(|e| format!("Failed to parse frames: {}", e))?
+        } else if let Some(frames_arr) = result.get("frames") {
+            serde_json::from_value(frames_arr.clone())
+                .map_err(|e| format!("Failed to parse frames: {}", e))?
+        } else {
+            vec![]
+        };
+
+        // For filtered searches, we don't have an easy way to get total matching count
+        // without doing a separate query. Use the returned count as an estimate.
+        let total = frames.len() as u64;
 
         Ok((frames, total))
-    }
-
-    /// Clear the current display filter
-    pub fn clear_filter(&self) -> Result<(), String> {
-        self.set_filter("")
     }
 
     /// Follow a TCP, UDP, or HTTP stream
@@ -606,22 +610,56 @@ impl SharkdClient {
     }
 
     /// Get capture statistics (protocol hierarchy, conversations, endpoints)
+    /// Uses a single batched tap request for performance
     pub fn capture_stats(&self) -> Result<CaptureStats, String> {
-        // Protocol hierarchy stats
-        let phs_result = self.send_request("tap", Some(json!({"tap0": "phs"})))?;
-        let protocol_hierarchy = Self::extract_protocol_hierarchy(&phs_result);
+        // Batch all tap requests into a single sharkd call
+        // Format: {"tap0": "phs", "tap1": "conv:TCP", ...}
+        // Note: endpoint tap uses "endpt:" (not "endp:")
+        let result = self.send_request("tap", Some(json!({
+            "tap0": "phs",
+            "tap1": "conv:TCP",
+            "tap2": "conv:UDP",
+            "tap3": "endpt:IPv4"
+        })))?;
 
-        // TCP conversations
-        let tcp_result = self.send_request("tap", Some(json!({"tap0": "conv:TCP"})))?;
-        let tcp_conversations = Self::extract_conversations(&tcp_result);
+        // Extract results from the batched response
+        // Response format: {"taps": [{"tap": "phs", "protos": [...]}, {"tap": "conv:TCP", "convs": [...]}, ...]}
+        // Note: taps may be returned in any order, so we find them by the "tap" field
+        let taps = match result.get("taps").and_then(|t| t.as_array()) {
+            Some(t) => t,
+            None => return Ok(CaptureStats::default()),
+        };
 
-        // UDP conversations
-        let udp_result = self.send_request("tap", Some(json!({"tap0": "conv:UDP"})))?;
-        let udp_conversations = Self::extract_conversations(&udp_result);
+        // Helper closure to find a tap by its name
+        let find_tap = |name: &str| -> Option<&Value> {
+            taps.iter().find(|tap| {
+                tap.get("tap").and_then(|t| t.as_str()) == Some(name)
+            })
+        };
 
-        // IP endpoints
-        let endpoints_result = self.send_request("tap", Some(json!({"tap0": "endp:IPv4"})))?;
-        let endpoints = Self::extract_endpoints(&endpoints_result);
+        // Extract protocol hierarchy from phs tap (uses "protos" field)
+        let protocol_hierarchy = find_tap("phs")
+            .and_then(|tap| tap.get("protos"))
+            .and_then(|protos| serde_json::from_value(protos.clone()).ok())
+            .unwrap_or_default();
+
+        // Extract TCP conversations
+        let tcp_conversations = find_tap("conv:TCP")
+            .and_then(|tap| tap.get("convs"))
+            .and_then(|convs| serde_json::from_value(convs.clone()).ok())
+            .unwrap_or_default();
+
+        // Extract UDP conversations
+        let udp_conversations = find_tap("conv:UDP")
+            .and_then(|tap| tap.get("convs"))
+            .and_then(|convs| serde_json::from_value(convs.clone()).ok())
+            .unwrap_or_default();
+
+        // Extract endpoints (uses "hosts" field)
+        let endpoints = find_tap("endpt:IPv4")
+            .and_then(|tap| tap.get("hosts"))
+            .and_then(|hosts| serde_json::from_value(hosts.clone()).ok())
+            .unwrap_or_default();
 
         Ok(CaptureStats {
             protocol_hierarchy,

@@ -148,7 +148,8 @@ fn check_filter(filter: String) -> Result<bool, String> {
     client.check_filter(&filter)
 }
 
-/// Apply a display filter
+/// Validate a display filter and return the total frame count
+/// Note: sharkd doesn't support global filter state - filters are per-request
 #[tauri::command]
 fn apply_filter(filter: String) -> Result<u64, String> {
     let client_guard = get_sharkd().lock();
@@ -156,9 +157,13 @@ fn apply_filter(filter: String) -> Result<u64, String> {
         .as_ref()
         .ok_or_else(|| "Sharkd not initialized".to_string())?;
 
-    client.set_filter(&filter)?;
-    let status = client.status()?;
+    // Validate the filter
+    if !filter.is_empty() && !client.check_filter(&filter)? {
+        return Err("Invalid filter expression".to_string());
+    }
 
+    // Return total frame count (sharkd doesn't have global filter state)
+    let status = client.status()?;
     Ok(status.frames.unwrap_or(0))
 }
 
