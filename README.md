@@ -1,20 +1,42 @@
-# PacketPilot
+# PacketPilot 🦈
 
-AI-powered network packet analyzer built with Tauri, React, and sharkd.
+**AI-powered network packet analyzer.** Ask questions about your captures in plain English.
 
 ![PacketPilot](https://img.shields.io/badge/version-0.1.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
+[![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri-blue?logo=tauri)](https://tauri.app)
 
-## Overview
+> *"Show me all failed TLS handshakes"* → PacketPilot finds them.
 
-PacketPilot is a modern desktop application for analyzing network packet captures (PCAP files). It leverages Wireshark's `sharkd` daemon for packet parsing and provides a fast, virtualized packet viewer capable of handling captures with 100k+ packets without lag.
+## Why PacketPilot?
 
-### Features
+Wireshark is powerful, but its filter syntax is arcane. PacketPilot lets you **ask questions in natural language** while using Wireshark's actual dissection engine under the hood.
 
-- **High-Performance Packet Viewer** - Virtualized table handles massive captures smoothly
-- **Native File Dialog** - Open PCAP, PCAPNG, and other capture formats
-- **Display Filters** - Use Wireshark-compatible filter syntax
-- **Cross-Platform** - Runs on Linux, macOS, and Windows
+**Instead of memorizing:** `tcp.flags.syn == 1 && tcp.flags.ack == 0 && tcp.analysis.retransmission`
+
+**Just ask:** *"Find TCP SYN packets that were retransmitted"*
+
+## Features
+
+### 🤖 AI-Powered Analysis
+- **Natural language queries** — Ask questions, get answers
+- **Agentic tool use** — AI searches packets, analyzes conversations, finds anomalies
+- **Streaming responses** — Watch the AI think in real-time
+
+### ⚡ High Performance
+- **Virtualized packet grid** — Handles 100k+ packets without lag
+- **Native desktop app** — Rust backend, not Electron bloat
+- **Wireshark-compatible** — Uses `sharkd` for real protocol dissection
+
+### 🔍 Full Analysis Toolkit
+- Display filters (Wireshark syntax works!)
+- Conversation tracking
+- Protocol hierarchy
+- Endpoint statistics
+- Stream reconstruction
+
+### 💻 Cross-Platform
+- Linux, macOS, and Windows
 
 ## Prerequisites
 
@@ -83,7 +105,7 @@ xcode-select --install
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/packet-pilot.git
+git clone https://github.com/Gammell53/packet-pilot.git
 cd packet-pilot
 
 # Install dependencies
@@ -123,23 +145,24 @@ The compiled application will be in `src-tauri/target/release/`.
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    React Frontend                        │
-│  ┌─────────────┐  ┌──────────────────────────────────┐  │
-│  │ File Picker │  │      Virtual Packet Grid         │  │
-│  └─────────────┘  │  (TanStack Table + Virtual)      │  │
-│                   └──────────────────────────────────┘  │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐  │
+│  │ Packet Grid │  │  AI Chat    │  │ Filter Bar      │  │
+│  │ (Virtual)   │  │  Panel      │  │                 │  │
+│  └─────────────┘  └─────────────┘  └─────────────────┘  │
 └───────────────────────────┬─────────────────────────────┘
-                            │ Tauri IPC
-┌───────────────────────────┴─────────────────────────────┐
-│                    Rust Backend                          │
-│  ┌─────────────────────────────────────────────────────┐│
-│  │              Sharkd Client (JSON-RPC)               ││
-│  └─────────────────────────────────────────────────────┘│
-└───────────────────────────┬─────────────────────────────┘
-                            │ stdin/stdout
-┌───────────────────────────┴─────────────────────────────┐
-│                     sharkd process                       │
-│              (Wireshark's dissection engine)             │
-└─────────────────────────────────────────────────────────┘
+                            │ Tauri IPC + HTTP
+        ┌───────────────────┼───────────────────┐
+        ▼                   ▼                   ▼
+┌───────────────┐  ┌─────────────────┐  ┌──────────────┐
+│  Rust Backend │  │  AI Sidecar     │  │   sharkd     │
+│  (Tauri)      │◄─┤  (Python/LLM)   │  │  (Wireshark) │
+│               │  │                 │  │              │
+│  - IPC bridge │  │  - Tool calling │  │  - Dissector │
+│  - HTTP proxy │  │  - Streaming    │  │  - Filters   │
+└───────┬───────┘  └─────────────────┘  └──────┬───────┘
+        │                                       │
+        └───────────────────────────────────────┘
+                     JSON-RPC over stdin/stdout
 ```
 
 ## Project Structure
@@ -147,26 +170,31 @@ The compiled application will be in `src-tauri/target/release/`.
 ```
 packet-pilot/
 ├── src/                    # React frontend
-│   ├── components/         # React components
-│   │   └── PacketGrid.tsx  # Virtualized packet table
-│   ├── App.tsx             # Main application
-│   └── App.css             # Styles
+│   ├── components/         # UI components
+│   │   ├── PacketGrid/     # Virtualized packet table
+│   │   └── AiChat/         # AI chat panel
+│   └── App.tsx             # Main application
 ├── src-tauri/              # Rust backend
 │   ├── src/
-│   │   ├── main.rs         # Entry point
-│   │   ├── lib.rs          # Tauri commands
+│   │   ├── lib.rs          # Tauri commands & HTTP bridge
 │   │   └── sharkd_client.rs # Sharkd JSON-RPC client
-│   ├── Cargo.toml          # Rust dependencies
 │   └── tauri.conf.json     # Tauri configuration
-└── package.json            # Node dependencies
+├── sidecar/                # AI agent (Python)
+│   └── src/packet_pilot_ai/
+│       ├── services/       # AI agent with tool calling
+│       └── routes/         # FastAPI endpoints
+└── package.json
 ```
 
 ## Roadmap
 
-- [ ] AI-powered packet analysis (Phase 2)
-- [ ] Natural language to filter translation
-- [ ] Stream reconstruction and summarization
-- [ ] Protocol anomaly detection
+- [x] High-performance packet viewer
+- [x] AI-powered analysis with tool calling
+- [x] Natural language to filter translation
+- [x] Streaming AI responses
+- [ ] Stream reconstruction visualization
+- [ ] Save/export analysis reports
+- [ ] Plugin system for custom analyzers
 
 ## License
 
