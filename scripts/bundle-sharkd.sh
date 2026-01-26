@@ -39,7 +39,7 @@ fi
 echo "Found sharkd at: $SHARKD_PATH"
 
 # Create output directory for libs
-LIBS_DIR="$OUTPUT_DIR/sharkd-libs"
+LIBS_DIR="$OUTPUT_DIR/wireshark-libs"
 mkdir -p "$LIBS_DIR"
 
 # Copy sharkd
@@ -66,14 +66,14 @@ cat > "$OUTPUT_DIR/sharkd-wrapper-$TARGET" << 'WRAPPER'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Try multiple locations for the libs directory (Tauri bundles resources differently)
-if [ -d "$SCRIPT_DIR/sharkd-libs" ]; then
-    LIBS_DIR="$SCRIPT_DIR/sharkd-libs"
-elif [ -d "$SCRIPT_DIR/../lib/sharkd-libs" ]; then
-    LIBS_DIR="$SCRIPT_DIR/../lib/sharkd-libs"
-elif [ -d "$SCRIPT_DIR/../Resources/sharkd-libs" ]; then
-    LIBS_DIR="$SCRIPT_DIR/../Resources/sharkd-libs"
+if [ -d "$SCRIPT_DIR/wireshark-libs" ]; then
+    LIBS_DIR="$SCRIPT_DIR/wireshark-libs"
+elif [ -d "$SCRIPT_DIR/../lib/wireshark-libs" ]; then
+    LIBS_DIR="$SCRIPT_DIR/../lib/wireshark-libs"
+elif [ -d "$SCRIPT_DIR/../Resources/wireshark-libs" ]; then
+    LIBS_DIR="$SCRIPT_DIR/../Resources/wireshark-libs"
 else
-    LIBS_DIR="$SCRIPT_DIR/sharkd-libs"
+    LIBS_DIR="$SCRIPT_DIR/wireshark-libs"
 fi
 
 export LD_LIBRARY_PATH="$LIBS_DIR:$LD_LIBRARY_PATH"
