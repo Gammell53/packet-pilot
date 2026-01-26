@@ -28,25 +28,63 @@ fn is_production() -> bool {
     }
 }
 
+/// Get the target triple for the current platform
+fn get_target_triple() -> &'static str {
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    return "x86_64-unknown-linux-gnu";
+
+    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+    return "aarch64-unknown-linux-gnu";
+
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    return "x86_64-apple-darwin";
+
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    return "aarch64-apple-darwin";
+
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    return "x86_64-pc-windows-msvc";
+
+    #[cfg(not(any(
+        all(target_os = "linux", target_arch = "x86_64"),
+        all(target_os = "linux", target_arch = "aarch64"),
+        all(target_os = "macos", target_arch = "x86_64"),
+        all(target_os = "macos", target_arch = "aarch64"),
+        all(target_os = "windows", target_arch = "x86_64"),
+    )))]
+    return "unknown";
+}
+
 /// Get the path to the bundled sidecar binary (production mode)
 fn get_bundled_sidecar_path() -> Option<std::path::PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let exe_dir = exe.parent()?;
+    let target_triple = get_target_triple();
 
-    // Determine binary name based on platform
+    // Determine binary name based on platform (with target triple for bundled resources)
     #[cfg(target_os = "windows")]
-    let binary_name = "packet-pilot-ai.exe";
+    let binary_name = format!("packet-pilot-ai-{}.exe", target_triple);
     #[cfg(not(target_os = "windows"))]
-    let binary_name = "packet-pilot-ai";
+    let binary_name = format!("packet-pilot-ai-{}", target_triple);
+
+    // Also try without target triple for backwards compatibility
+    #[cfg(target_os = "windows")]
+    let binary_name_simple = "packet-pilot-ai.exe";
+    #[cfg(not(target_os = "windows"))]
+    let binary_name_simple = "packet-pilot-ai";
 
     // Try different locations based on platform
     let candidates = [
-        // Linux/Windows: binary is next to the main executable
-        exe_dir.join(binary_name),
+        // Primary: bundled with target triple suffix (from resources)
+        exe_dir.join(&binary_name),
+        // Fallback: simple name without target triple
+        exe_dir.join(binary_name_simple),
         // macOS: binary might be in Resources or MacOS
-        exe_dir.join("../Resources").join(binary_name),
+        exe_dir.join("../Resources").join(&binary_name),
+        exe_dir.join("../Resources").join(binary_name_simple),
         // Fallback: look in a binaries subdirectory
-        exe_dir.join("binaries").join(binary_name),
+        exe_dir.join("binaries").join(&binary_name),
+        exe_dir.join("binaries").join(binary_name_simple),
     ];
 
     for candidate in &candidates {
