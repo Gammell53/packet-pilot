@@ -6,7 +6,7 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Split-Path -Parent $ScriptDir
 $OutputDir = Join-Path $ProjectRoot "src-tauri\binaries"
-$LibsDir = Join-Path $OutputDir "sharkd-libs"
+$LibsDir = Join-Path $OutputDir "wireshark-libs"
 $Target = "x86_64-pc-windows-msvc"
 
 Write-Host "Bundling sharkd for Windows..."

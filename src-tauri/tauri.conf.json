@@ -32,10 +32,14 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "binaries/sharkd-libs/*",
-      "binaries/sharkd-*",
-      "binaries/sharkd-wrapper-*",
-      "binaries/packet-pilot-ai-*"
+      "binaries/wireshark-libs/*",
+      "binaries/*.dll",
+      "binaries/sharkd-x86_64-*",
+      "binaries/sharkd-aarch64-*",
+      "binaries/sharkd-wrapper-x86_64-*",
+      "binaries/sharkd-wrapper-aarch64-*",
+      "binaries/packet-pilot-ai-x86_64-*",
+      "binaries/packet-pilot-ai-aarch64-*"
     ]
   }
 }
