@@ -2,8 +2,9 @@
 
 **AI-powered network packet analyzer.** Ask questions about your captures in plain English.
 
-![PacketPilot](https://img.shields.io/badge/version-0.1.0-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+[![Build Status](https://github.com/Gammell53/packet-pilot/actions/workflows/build.yml/badge.svg)](https://github.com/Gammell53/packet-pilot/actions/workflows/build.yml)
+[![Release](https://img.shields.io/github/v/release/Gammell53/packet-pilot?include_prereleases)](https://github.com/Gammell53/packet-pilot/releases)
+[![License](https://img.shields.io/github/license/Gammell53/packet-pilot)](LICENSE)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri-blue?logo=tauri)](https://tauri.app)
 
 > *"Show me all failed TLS handshakes"* → PacketPilot finds them.
@@ -195,6 +196,10 @@ packet-pilot/
 - [ ] Stream reconstruction visualization
 - [ ] Save/export analysis reports
 - [ ] Plugin system for custom analyzers
+
+## Contributing
+
+Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md) before getting started.
 
 ## License
 
