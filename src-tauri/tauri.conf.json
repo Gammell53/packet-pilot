@@ -33,7 +33,6 @@
     ],
     "resources": [
       "binaries/wireshark-libs/*",
-      "binaries/*.dll",
       "binaries/sharkd-x86_64-*",
       "binaries/sharkd-aarch64-*",
       "binaries/sharkd-wrapper-x86_64-*",
