@@ -34,11 +34,8 @@
     "resources": [
       "binaries/wireshark-libs/*",
       "binaries/sharkd-x86_64-*",
-      "binaries/sharkd-aarch64-*",
       "binaries/sharkd-wrapper-x86_64-*",
-      "binaries/sharkd-wrapper-aarch64-*",
-      "binaries/packet-pilot-ai-x86_64-*",
-      "binaries/packet-pilot-ai-aarch64-*"
+      "binaries/packet-pilot-ai-x86_64-*"
     ]
   }
 }
