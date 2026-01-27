@@ -226,6 +226,11 @@ jobs:
             }
           }
 
+          # Create wireshark-libs directory with placeholder (for cross-platform resource config)
+          $LibsDir = Join-Path $OutputDir "wireshark-libs"
+          New-Item -ItemType Directory -Force -Path $LibsDir | Out-Null
+          New-Item -ItemType File -Force -Path (Join-Path $LibsDir ".gitkeep") | Out-Null
+
           # List what we bundled
           Write-Host ""
           Write-Host "=== Bundled files ==="
