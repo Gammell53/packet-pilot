@@ -31,11 +31,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "externalBin": [
+      "binaries/sharkd",
+      "binaries/sharkd-wrapper",
+      "binaries/packet-pilot-ai"
+    ],
     "resources": [
-      "binaries/wireshark-libs/*",
-      "binaries/sharkd-x86_64-*",
-      "binaries/sharkd-wrapper-x86_64-*",
-      "binaries/packet-pilot-ai-x86_64-*"
+      "binaries/wireshark-libs/*"
     ]
   }
 }
