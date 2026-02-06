@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "verify:sharkd": "node scripts/verify-sharkd.cjs",
     "build:sidecar": "cd sidecar && ./build.sh",
     "build:sidecar:win": "powershell -ExecutionPolicy Bypass -File sidecar/build.ps1",
     "build:sharkd": "./scripts/bundle-sharkd.sh",
@@ -16,8 +17,8 @@
     "build:binaries:win": "npm run build:sidecar:win && npm run build:sharkd:win",
     "preview": "vite preview",
     "tauri": "tauri",
-    "tauri:build": "npm run build:binaries && tauri build",
-    "tauri:build:win": "npm run build:binaries:win && tauri build"
+    "tauri:build": "npm run verify:sharkd && npm run build:binaries && tauri build",
+    "tauri:build:win": "npm run verify:sharkd && npm run build:binaries:win && tauri build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
