@@ -222,6 +222,18 @@ if (-not $WiresharkDir) {
 Write-Host "Using sharkd: $SharkdPath"
 Write-Host "Using Wireshark dir: $WiresharkDir"
 
+$RuntimePathDirs = @()
+if ($env:PATH) {
+    $RuntimePathDirs = @(
+        $env:PATH -split ';' |
+            Where-Object {
+                $_ -and
+                (Test-Path $_) -and
+                ($_ -match '(?i)(msys|mingw|ucrt|wireshark)')
+            }
+    ) | Select-Object -Unique
+}
+
 $SearchDirs = @(
     $WiresharkDir,
     (Join-Path $WiresharkDir "bin"),
@@ -235,15 +247,35 @@ $SearchDirs = @(
     "C:\ucrt64\bin",
     "C:\msys64\ucrt64\bin",
     "C:\msys64\mingw64\bin",
-    "C:\msys64\usr\bin"
+    "C:\msys64\usr\bin",
+    "D:\a\_temp\msys64\ucrt64\bin",
+    "D:\a\_temp\msys64\mingw64\bin",
+    "D:\a\_temp\msys64\usr\bin",
+    "D:\a\_temp\msys64\clang64\bin"
 ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
 
 $DeepSearchRoots = @(
     "C:\wireshark-src",
     "C:\msys64",
     "C:\mingw64",
-    "C:\ucrt64"
+    "C:\ucrt64",
+    "D:\a\_temp\msys64"
 ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
+
+if ($RuntimePathDirs.Count -gt 0) {
+    $SearchDirs = @($SearchDirs + $RuntimePathDirs) | Select-Object -Unique
+    $DeepSearchRoots = @($DeepSearchRoots + $RuntimePathDirs) | Select-Object -Unique
+}
+
+Write-Host "Dependency search directories ($($SearchDirs.Count)):"
+foreach ($dir in $SearchDirs) {
+    Write-Host "  $dir"
+}
+
+Write-Host "Deep search roots ($($DeepSearchRoots.Count)):"
+foreach ($root in $DeepSearchRoots) {
+    Write-Host "  $root"
+}
 
 # Create output directories.
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
