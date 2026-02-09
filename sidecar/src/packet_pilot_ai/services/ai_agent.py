@@ -2,7 +2,10 @@
 
 import json
 import os
-from typing import Optional
+import asyncio
+import random
+from dataclasses import dataclass
+from typing import Any, Optional, AsyncIterator
 from openai import AsyncOpenAI, AuthenticationError, APIStatusError
 
 from ..models.schemas import (
@@ -294,8 +297,200 @@ WHEN TO USE: To analyze related packets.
 ]
 
 
+TOOL_SCHEMAS = {
+    tool["function"]["name"]: tool["function"].get("parameters", {})
+    for tool in TOOLS
+}
+
+TOOL_NUMERIC_BOUNDS: dict[str, dict[str, tuple[int | None, int | None]]] = {
+    "search_packets": {"limit": (1, 200)},
+    "get_stream": {"stream_id": (0, 1000000)},
+    "get_packet_details": {"packet_num": (1, 100000000)},
+    "get_packet_context": {
+        "packet_num": (1, 100000000),
+        "before": (0, 50),
+        "after": (0, 50),
+    },
+    "compare_packets": {
+        "packet_a": (1, 100000000),
+        "packet_b": (1, 100000000),
+    },
+    "get_conversations": {"limit": (1, 100)},
+    "get_endpoints": {"limit": (1, 100)},
+}
+
+TOOL_GUARDRAIL_PHRASES = (
+    "ignore previous instructions",
+    "system prompt",
+    "developer message",
+    "openrouter_api_key",
+    "api key",
+)
+
+
+def _env_int(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
+def _tool_error(
+    tool_name: str,
+    code: str,
+    message: str,
+    *,
+    retryable: bool = False,
+    details: dict[str, Any] | None = None,
+) -> str:
+    payload: dict[str, Any] = {
+        "ok": False,
+        "tool": tool_name,
+        "error": {
+            "code": code,
+            "message": message,
+            "retryable": retryable,
+        },
+    }
+    if details:
+        payload["error"]["details"] = details
+    return f"Tool error: {json.dumps(payload, ensure_ascii=True)}"
+
+
+def _validate_tool_arguments(name: str, arguments: Any) -> str | None:
+    if name not in TOOL_SCHEMAS:
+        return f"Unknown tool: {name}"
+    if not isinstance(arguments, dict):
+        return "Tool arguments must be an object"
+
+    schema = TOOL_SCHEMAS[name]
+    properties = schema.get("properties", {})
+    required = schema.get("required", [])
+
+    missing = [key for key in required if key not in arguments]
+    if missing:
+        return f"Missing required arguments: {', '.join(missing)}"
+
+    unknown = [key for key in arguments if key not in properties]
+    if unknown:
+        return f"Unexpected arguments: {', '.join(unknown)}"
+
+    for key, value in arguments.items():
+        expected_type = properties.get(key, {}).get("type")
+        if expected_type == "integer" and (not isinstance(value, int) or isinstance(value, bool)):
+            return f"Argument '{key}' must be an integer"
+        if expected_type == "string" and not isinstance(value, str):
+            return f"Argument '{key}' must be a string"
+        if expected_type == "array" and not isinstance(value, list):
+            return f"Argument '{key}' must be an array"
+        if expected_type == "object" and not isinstance(value, dict):
+            return f"Argument '{key}' must be an object"
+
+        enum_values = properties.get(key, {}).get("enum")
+        if enum_values and value not in enum_values:
+            return f"Argument '{key}' must be one of: {', '.join(enum_values)}"
+
+    bounds = TOOL_NUMERIC_BOUNDS.get(name, {})
+    for key, (min_value, max_value) in bounds.items():
+        if key not in arguments:
+            continue
+        value = arguments[key]
+        if not isinstance(value, int) or isinstance(value, bool):
+            continue
+        if min_value is not None and value < min_value:
+            return f"Argument '{key}' must be >= {min_value}"
+        if max_value is not None and value > max_value:
+            return f"Argument '{key}' must be <= {max_value}"
+
+    return None
+
+
+def _check_tool_guardrail(arguments: dict[str, Any]) -> str | None:
+    serialized = json.dumps(arguments, ensure_ascii=True).lower()
+    max_len = _env_int("AI_MAX_TOOL_ARGUMENT_CHARS", 4000)
+    if len(serialized) > max_len:
+        return f"Tool arguments too large ({len(serialized)} chars > {max_len})"
+
+    for phrase in TOOL_GUARDRAIL_PHRASES:
+        if phrase in serialized:
+            return f"Tool arguments matched blocked phrase '{phrase}'"
+
+    return None
+
+
+def _decode_tool_arguments(name: str, raw_arguments: str | None) -> tuple[dict[str, Any] | None, str | None]:
+    raw = raw_arguments or "{}"
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return None, _tool_error(name, "invalid_json_arguments", f"Invalid JSON arguments: {exc.msg}")
+
+    if not isinstance(parsed, dict):
+        return None, _tool_error(name, "invalid_arguments", "Tool arguments JSON must decode to an object")
+
+    return parsed, None
+
+
+def _is_retryable_llm_error(error: Exception) -> bool:
+    if isinstance(error, APIStatusError):
+        return error.status_code in {408, 409, 425, 429, 500, 502, 503, 504}
+
+    lowered = type(error).__name__.lower()
+    if "timeout" in lowered or "connection" in lowered:
+        return True
+
+    return isinstance(error, (TimeoutError, ConnectionError, OSError))
+
+
+async def _create_chat_completion_with_retry(
+    client: AsyncOpenAI,
+    request_kwargs: dict[str, Any],
+    *,
+    operation: str,
+):
+    max_attempts = max(1, _env_int("AI_RETRY_MAX_ATTEMPTS", 3))
+    base_delay = max(0.05, _env_float("AI_RETRY_BASE_DELAY_SECONDS", 0.4))
+    max_delay = max(base_delay, _env_float("AI_RETRY_MAX_DELAY_SECONDS", 4.0))
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return await client.chat.completions.create(**request_kwargs)
+        except Exception as exc:
+            if attempt == max_attempts or not _is_retryable_llm_error(exc):
+                raise
+
+            delay = min(max_delay, base_delay * (2 ** (attempt - 1)))
+            delay *= random.uniform(0.8, 1.2)
+            log(
+                f"{operation} transient failure ({type(exc).__name__}); "
+                f"retrying {attempt + 1}/{max_attempts} in {delay:.2f}s"
+            )
+            await asyncio.sleep(delay)
+
+
 async def execute_tool(name: str, arguments: dict) -> str:
     """Execute a tool and return the result as a string."""
+    validation_error = _validate_tool_arguments(name, arguments)
+    if validation_error:
+        return _tool_error(name, "invalid_arguments", validation_error)
+
+    guardrail_error = _check_tool_guardrail(arguments)
+    if guardrail_error:
+        return _tool_error(name, "guardrail_blocked", guardrail_error)
+
     try:
         if name == "search_packets":
             result = await search_packets(
@@ -557,9 +752,9 @@ async def execute_tool(name: str, arguments: dict) -> str:
                 return "No endpoints found"
             return "Error fetching endpoints"
 
-        return f"Unknown tool: {name}"
+        return _tool_error(name, "unknown_tool", f"Unknown tool: {name}")
     except Exception as e:
-        return f"Tool error: {str(e)}"
+        return _tool_error(name, "execution_failed", str(e))
 
 
 class AIServiceError(Exception):
@@ -700,7 +895,11 @@ async def call_llm(
             kwargs["tools"] = TOOLS
             kwargs["tool_choice"] = "auto"
 
-        response = await client.chat.completions.create(**kwargs)
+        response = await _create_chat_completion_with_retry(
+            client,
+            kwargs,
+            operation="initial completion",
+        )
         log("Response received")
         message = response.choices[0].message
         log(f"Response content length: {len(message.content) if message.content else 0}")
@@ -738,9 +937,14 @@ async def call_llm(
 
             # Execute each tool and add results
             for tool_call in current_message.tool_calls:
-                log(f"Executing tool: {tool_call.function.name} with args: {tool_call.function.arguments}")
-                args = json.loads(tool_call.function.arguments)
-                result = await execute_tool(tool_call.function.name, args)
+                tool_name = tool_call.function.name
+                raw_arguments = tool_call.function.arguments
+                log(f"Executing tool: {tool_name} with args: {raw_arguments}")
+                args, parse_error = _decode_tool_arguments(tool_name, raw_arguments)
+                if parse_error:
+                    result = parse_error
+                else:
+                    result = await execute_tool(tool_name, args)
                 log(f"Tool result: {result[:200] if result else 'None'}...")
                 full_messages.append({
                     "role": "tool",
@@ -750,12 +954,16 @@ async def call_llm(
 
             # Get next response after tool execution
             log(f"Making LLM call after tool execution (iteration {iteration + 1})...")
-            next_response = await client.chat.completions.create(
-                model=model,
-                max_tokens=max_tokens,
-                messages=full_messages,
-                tools=TOOLS if use_tools else None,
-                tool_choice="auto" if use_tools else None,
+            next_response = await _create_chat_completion_with_retry(
+                client,
+                {
+                    "model": model,
+                    "max_tokens": max_tokens,
+                    "messages": full_messages,
+                    "tools": TOOLS if use_tools else None,
+                    "tool_choice": "auto" if use_tools else None,
+                },
+                operation=f"tool iteration {iteration + 1}",
             )
             current_message = next_response.choices[0].message
             log(f"Response content length: {len(current_message.content) if current_message.content else 0}")
@@ -807,10 +1015,6 @@ async def call_llm(
         raise
 
 
-from typing import AsyncIterator
-from dataclasses import dataclass, field
-
-
 @dataclass
 class ToolCallAccumulator:
     """Accumulates tool call deltas from streaming."""
@@ -859,7 +1063,11 @@ async def call_llm_streaming(
                 kwargs["tools"] = TOOLS
                 kwargs["tool_choice"] = "auto"
 
-            stream = await client.chat.completions.create(**kwargs)
+            stream = await _create_chat_completion_with_retry(
+                client,
+                kwargs,
+                operation=f"streaming iteration {iteration + 1}",
+            )
 
             # Accumulate the response
             accumulated_content = ""
@@ -925,13 +1133,13 @@ async def call_llm_streaming(
             # Execute each tool and add results
             for tc in tool_calls.values():
                 log(f"Executing tool: {tc.name}")
-                try:
-                    args = json.loads(tc.arguments)
+                args, parse_error = _decode_tool_arguments(tc.name, tc.arguments)
+                if parse_error:
+                    result = parse_error
+                else:
                     result = await execute_tool(tc.name, args)
-                    log(f"Tool result: {result[:200] if result else 'None'}...")
-                except Exception as e:
-                    result = f"Tool error: {str(e)}"
-                    log(f"Tool error: {e}")
+
+                log(f"Tool result: {result[:200] if result else 'None'}...")
 
                 full_messages.append({
                     "role": "tool",
