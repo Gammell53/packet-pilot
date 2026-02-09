@@ -116,6 +116,8 @@ npm install
 npm run tauri dev
 ```
 
+For Windows releases, use the NSIS `.exe` installer by default. The `.msi` package is primarily intended for managed/enterprise deployment.
+
 ## Building
 
 ```bash
@@ -140,6 +142,20 @@ The compiled application will be in `src-tauri/target/release/`.
 | `Ctrl/Cmd + F` | Focus filter input |
 | `Enter` | Apply filter |
 | `Esc` | Clear filter |
+
+## Windows Troubleshooting
+
+If startup fails with `Failed to initialize sharkd` or a missing DLL error:
+
+1. Reinstall using the latest Windows `.exe` installer.
+2. Confirm these files exist under `%LOCALAPPDATA%\\PacketPilot\\`:
+   - `sharkd-x86_64-pc-windows-msvc.exe`
+   - `libwireshark.dll`
+   - `libwiretap.dll`
+   - `libwsutil.dll`
+3. Restart PacketPilot.
+
+If the problem persists, open an issue and include the full startup debug block.
 
 ## Architecture
 

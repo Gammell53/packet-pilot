@@ -22,8 +22,18 @@
   overflow-y: auto;
 }
 
-.error-banner .error-message {
+.error-banner.install-health-banner {
+  background: color-mix(in srgb, var(--accent-orange) 14%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent-orange) 35%, transparent);
+  color: var(--text-primary);
+}
+
+.error-content {
   flex: 1;
+  min-width: 0;
+}
+
+.error-banner .error-message {
   margin: 0;
   padding: 0;
   font-family: var(--font-mono);
@@ -33,7 +43,27 @@
   line-height: 1.4;
 }
 
-.error-banner button {
+.error-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.error-actions .action-button {
+  border: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.error-actions .action-button:hover {
+  border-color: var(--accent-blue);
+}
+
+.error-banner > button {
   background: transparent;
   border: none;
   color: var(--accent-red);

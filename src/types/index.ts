@@ -53,6 +53,19 @@ export interface SharkdStatus {
   filename?: string;
 }
 
+export interface InstallIssue {
+  code: "missing_sharkd" | "missing_dependency" | "spawn_failed" | "invalid_bundle" | string;
+  message: string;
+  path?: string;
+}
+
+export interface InstallHealthStatus {
+  ok: boolean;
+  issues: InstallIssue[];
+  checked_paths: string[];
+  recommended_action: string;
+}
+
 // ============================================
 // UI State Types
 // ============================================

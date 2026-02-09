@@ -151,10 +151,6 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $OutputDir = "src-tauri/binaries"
-          $Target = "x86_64-pc-windows-msvc"
-
-          # Find sharkd.exe from MSYS2 build
           $SharkdPaths = @(
             "C:\wireshark-src\build\run\sharkd.exe",
             "C:\wireshark-src\build\sharkd.exe"
@@ -173,68 +169,54 @@ jobs:
             exit 1
           }
 
-          Write-Host "Found sharkd at: $SharkdPath"
+          $WiresharkDir = Split-Path $SharkdPath
+          powershell -ExecutionPolicy Bypass -File scripts/bundle-sharkd.ps1 `
+            -SharkdPath $SharkdPath `
+            -WiresharkDir $WiresharkDir
 
-          # Create output directory
-          New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+      - name: Validate bundled sharkd (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $BundleDir = "src-tauri/binaries"
+          $Sharkd = Join-Path $BundleDir "sharkd-x86_64-pc-windows-msvc.exe"
+          $Objdump = "C:\msys64\ucrt64\bin\objdump.exe"
 
-          # Copy sharkd with target suffix
-          $DestSharkd = Join-Path $OutputDir "sharkd-$Target.exe"
-          Copy-Item $SharkdPath $DestSharkd -Force
-          Write-Host "Copied sharkd to: $DestSharkd"
-
-          # Copy sharkd-wrapper (same as sharkd on Windows)
-          $DestWrapper = Join-Path $OutputDir "sharkd-wrapper-$Target.exe"
-          Copy-Item $SharkdPath $DestWrapper -Force
-          Write-Host "Copied wrapper to: $DestWrapper"
-
-          # Copy required DLLs from MSYS2 UCRT64
-          $MsysBin = "C:\msys64\ucrt64\bin"
-          $WiresharkBuild = Split-Path $SharkdPath
-
-          # Copy DLLs from Wireshark build directory (if any)
-          if (Test-Path "$WiresharkBuild\*.dll") {
-            Copy-Item "$WiresharkBuild\*.dll" $OutputDir -Force
-            Write-Host "Copied DLLs from Wireshark build"
+          if (-not (Test-Path $Sharkd)) {
+            throw "Missing bundled sharkd executable: $Sharkd"
           }
 
-          # Core runtime DLLs from MSYS2
-          $CoreDlls = @(
-            "libgcc_s_seh-1.dll",
-            "libstdc++-6.dll",
-            "libwinpthread-1.dll",
-            "libglib-2.0-0.dll",
-            "libgmodule-2.0-0.dll",
-            "libintl-8.dll",
-            "libiconv-2.dll",
-            "libpcre2-8-0.dll",
-            "zlib1.dll",
-            "liblz4.dll",
-            "liblzma-5.dll",
-            "libzstd.dll",
-            "libgcrypt-20.dll",
-            "libgpg-error-0.dll",
-            "libbrotlidec.dll",
-            "libbrotlicommon.dll",
-            "libcares-2.dll"
-          )
+          if (-not (Test-Path $Objdump)) {
+            throw "objdump not found at $Objdump"
+          }
 
-          foreach ($dll in $CoreDlls) {
-            $src = Join-Path $MsysBin $dll
-            if (Test-Path $src) {
-              Copy-Item $src $OutputDir -Force
+          $SystemDllRegex = '^(api-ms-win-|KERNEL32\\.dll$|WS2_32\\.dll$|UCRTBASE\\.dll$|VCRUNTIME140(_1)?\\.dll$|MSVCP140\\.dll$)'
+          $Imports = & $Objdump -p $Sharkd 2>$null |
+            Select-String -Pattern '^\\s*DLL Name:\\s+(.+)$' |
+            ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() } |
+            Select-Object -Unique
+
+          $Missing = @()
+          foreach ($dll in $Imports) {
+            if ($dll -match $SystemDllRegex) { continue }
+            if (-not (Test-Path (Join-Path $BundleDir $dll))) {
+              $Missing += $dll
             }
           }
 
-          # Create wireshark-libs directory with placeholder (for cross-platform resource config)
-          $LibsDir = Join-Path $OutputDir "wireshark-libs"
-          New-Item -ItemType Directory -Force -Path $LibsDir | Out-Null
-          New-Item -ItemType File -Force -Path (Join-Path $LibsDir ".gitkeep") | Out-Null
+          if ($Missing.Count -gt 0) {
+            Write-Host "Missing imported DLLs:"
+            $Missing | ForEach-Object { Write-Host "  - $_" }
+            throw "Windows sharkd bundle validation failed"
+          }
 
-          # List what we bundled
-          Write-Host ""
-          Write-Host "=== Bundled files ==="
-          Get-ChildItem $OutputDir | ForEach-Object { Write-Host $_.Name }
+          & $Sharkd -v | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            throw "sharkd smoke check failed with exit code $LASTEXITCODE"
+          }
+
+          Write-Host "Windows sharkd bundle validation passed"
 
       # ============================================
       # Common build steps
@@ -255,7 +237,7 @@ jobs:
             AI-powered network packet analyzer.
 
             ### Downloads
-            - **Windows**: Download the `.msi` installer
+            - **Windows**: Download the `.exe` installer (recommended) or `.msi`
             - **Linux**: Download the `.AppImage` (portable) or `.deb` package
 
             ### What's New
@@ -272,7 +254,7 @@ jobs:
           path: |
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/nsis/*.exe
-          if-no-files-found: warn
+          if-no-files-found: error
 
       - name: Upload Linux artifacts
         if: matrix.platform == 'ubuntu-22.04'
@@ -282,4 +264,4 @@ jobs:
           path: |
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/appimage/*.AppImage
-          if-no-files-found: warn
+          if-no-files-found: error
