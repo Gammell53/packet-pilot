@@ -281,11 +281,6 @@ fn spawn_dev_sidecar(
         .map_err(|e| format!("Failed to spawn Python sidecar: {}", e))
 }
 
-/// Spawn the Python sidecar process (legacy, no config)
-pub fn spawn_python_sidecar() -> Result<u16, String> {
-    spawn_python_sidecar_with_config(None, None)
-}
-
 /// Stop the Python sidecar process
 pub fn stop_python_sidecar() -> Result<(), String> {
     let mut guard = get_python_process().lock();
