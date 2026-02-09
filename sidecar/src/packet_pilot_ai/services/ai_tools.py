@@ -178,6 +178,148 @@ WHEN TO USE: When you need to examine one packet in detail.
             }
         }
     },
+    # === PROTOCOL-AWARE TOOLS ===
+    {
+        "type": "function",
+        "function": {
+            "name": "analyze_http_transaction",
+            "description": """Analyze an HTTP request/response transaction with key metadata.
+
+RETURNS: Request line, response status, key headers, payload preview (optional), and quick findings.
+
+WHEN TO USE:
+- "Summarize this HTTP exchange"
+- "What happened in this request?"
+- "Analyze HTTP transaction in stream X"
+
+NOTE: Provide exactly one selector: stream_id or request_frame.""",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "stream_id": {
+                        "type": "integer",
+                        "description": "TCP stream id containing HTTP traffic"
+                    },
+                    "request_frame": {
+                        "type": "integer",
+                        "description": "Request frame number used to resolve tcp.stream"
+                    },
+                    "include_body_preview": {
+                        "type": "boolean",
+                        "description": "Whether to include short payload preview",
+                        "default": False
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "analyze_dns_activity",
+            "description": """Analyze DNS behavior including query patterns and error rates.
+
+RETURNS: Top queried domains, responder/requester pairs, and DNS error indicators.
+
+WHEN TO USE:
+- "Any DNS issues?"
+- "What domains were queried?"
+- "Look for NXDOMAIN spikes"
+""",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query_contains": {
+                        "type": "string",
+                        "description": "Substring to match in queried domain name"
+                    },
+                    "rr_type": {
+                        "type": "string",
+                        "enum": ["A", "AAAA", "CNAME", "MX", "TXT", "NS", "PTR", "SRV"],
+                        "description": "Restrict to a DNS record type"
+                    },
+                    "rcode_only": {
+                        "type": "boolean",
+                        "description": "If true, only include DNS packets with non-zero RCODE",
+                        "default": False
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max DNS packets to inspect (default 50)",
+                        "default": 50
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "analyze_tls_session",
+            "description": """Analyze a TLS session for version, alerts, and certificate/SNI hints.
+
+RETURNS: TLS session summary including possible alerts or handshake issues.
+
+WHEN TO USE:
+- "Inspect TLS handshake"
+- "Any TLS alerts in stream X?"
+- "What cert/SNI was used?"
+""",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "stream_id": {
+                        "type": "integer",
+                        "description": "TCP stream id to inspect"
+                    },
+                    "include_cert_subjects": {
+                        "type": "boolean",
+                        "description": "Include certificate subject details when available",
+                        "default": True
+                    }
+                },
+                "required": ["stream_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "summarize_protocol_timeline",
+            "description": """Summarize protocol activity over time to find bursts and shifts.
+
+RETURNS: Time-bucketed counts by protocol and top spike windows.
+
+WHEN TO USE:
+- "What changed over time?"
+- "When did DNS/TLS spike?"
+- "Give me a traffic timeline"
+""",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "protocols": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Protocol filters to include (default dns,tcp,tls,http)"
+                    },
+                    "bucket_seconds": {
+                        "type": "integer",
+                        "description": "Time bucket size in seconds (default 5)",
+                        "default": 5
+                    },
+                    "top_n_events": {
+                        "type": "integer",
+                        "description": "Number of busiest time windows to report (default 5)",
+                        "default": 5
+                    }
+                },
+                "required": []
+            }
+        }
+    },
     # === ANALYSIS TOOLS ===
     {
         "type": "function",
@@ -280,6 +422,16 @@ TOOL_NUMERIC_BOUNDS: dict[str, dict[str, tuple[int | None, int | None]]] = {
     "search_packets": {"limit": (1, 200)},
     "get_stream": {"stream_id": (0, 1000000)},
     "get_packet_details": {"packet_num": (1, 100000000)},
+    "analyze_http_transaction": {
+        "stream_id": (0, 1000000),
+        "request_frame": (1, 100000000),
+    },
+    "analyze_dns_activity": {"limit": (1, 200)},
+    "analyze_tls_session": {"stream_id": (0, 1000000)},
+    "summarize_protocol_timeline": {
+        "bucket_seconds": (1, 300),
+        "top_n_events": (1, 20),
+    },
     "get_packet_context": {
         "packet_num": (1, 100000000),
         "before": (0, 50),
@@ -300,3 +452,7 @@ TOOL_GUARDRAIL_PHRASES = (
     "openrouter_api_key",
     "api key",
 )
+
+TOOL_EXACTLY_ONE_OF: dict[str, tuple[str, ...]] = {
+    "analyze_http_transaction": ("stream_id", "request_frame"),
+}
