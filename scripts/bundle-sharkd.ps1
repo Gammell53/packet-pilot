@@ -34,6 +34,19 @@ $AliasMap = @{
     "libzstd.dll"           = @("zstd.dll")
     "liblz4.dll"            = @("lz4.dll")
     "libopus-0.dll"         = @("opus.dll")
+    "libspeexdsp-1.dll"     = @("libspeexdsp.dll", "libspeexdsp-1.dll")
+    "libnghttp2-14.dll"     = @("nghttp2.dll")
+    "libnghttp3-9.dll"      = @("nghttp3.dll")
+    "libxml2-16.dll"        = @("libxml2.dll")
+    "libxxhash.dll"         = @("xxhash.dll")
+    "libcares-2.dll"        = @("libcares-2.dll", "cares.dll")
+    "libgnutls-30.dll"      = @("libgnutls-30.dll")
+    "libsmi-2.dll"          = @("libsmi-2.dll")
+    "libgcrypt-20.dll"      = @("libgcrypt-20.dll")
+    "libgcc_s_seh-1.dll"    = @("libgcc_s_seh-1.dll")
+    "libwinpthread-1.dll"   = @("libwinpthread-1.dll")
+    "zlib1.dll"             = @("zlib1.dll")
+    "libbrotlidec.dll"      = @("libbrotlidec.dll", "brotlidec.dll")
 }
 
 function Get-ObjdumpPath {
@@ -91,6 +104,16 @@ function Is-SystemDll {
     $n = $Name.ToLowerInvariant()
     return $n.StartsWith("api-ms-win-") -or
            $n -eq "kernel32.dll" -or
+           $n -eq "advapi32.dll" -or
+           $n -eq "iphlpapi.dll" -or
+           $n -eq "shell32.dll" -or
+           $n -eq "user32.dll" -or
+           $n -eq "ole32.dll" -or
+           $n -eq "oleaut32.dll" -or
+           $n -eq "secur32.dll" -or
+           $n -eq "crypt32.dll" -or
+           $n -eq "bcrypt.dll" -or
+           $n -eq "wsock32.dll" -or
            $n -eq "ws2_32.dll" -or
            $n -eq "ntdll.dll" -or
            $n -eq "ucrtbase.dll" -or
@@ -122,6 +145,25 @@ function Find-Dependency {
     }
 
     return $null
+}
+
+function New-AliasCopiesInOutput {
+    param([string]$Dir)
+
+    foreach ($targetName in $AliasMap.Keys) {
+        $targetPath = Join-Path $Dir $targetName
+        if (Test-Path $targetPath) {
+            continue
+        }
+
+        foreach ($alias in $AliasMap[$targetName]) {
+            $aliasPath = Join-Path $Dir $alias
+            if (Test-Path $aliasPath) {
+                Copy-Item $aliasPath $targetPath -Force
+                break
+            }
+        }
+    }
 }
 
 Write-Host "Bundling sharkd for Windows..."
@@ -160,8 +202,12 @@ Write-Host "Using Wireshark dir: $WiresharkDir"
 
 $SearchDirs = @(
     $WiresharkDir,
+    "C:\wireshark-src\build\run",
+    "C:\mingw64\bin",
+    "C:\ucrt64\bin",
     "C:\msys64\ucrt64\bin",
-    "C:\msys64\mingw64\bin"
+    "C:\msys64\mingw64\bin",
+    "C:\msys64\usr\bin"
 ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
 
 # Create output directories.
@@ -230,12 +276,34 @@ if ($InitialDlls.Count -gt 0) {
             $MissingDlls.Add($dll) | Out-Null
         }
     }
+
+    if ($MissingDlls.Count -gt 0) {
+        # Broad fallback copy from known runtime dirs to handle runner-specific layouts.
+        foreach ($dir in $SearchDirs) {
+            Get-ChildItem -Path $dir -Filter "*.dll" -ErrorAction SilentlyContinue | ForEach-Object {
+                $destPath = Join-Path $OutputDir $_.Name
+                if (-not (Test-Path $destPath)) {
+                    Copy-Item $_.FullName $destPath -Force
+                }
+            }
+        }
+
+        New-AliasCopiesInOutput -Dir $OutputDir
+
+        $MissingDlls.Clear()
+        foreach ($dll in $InitialDlls) {
+            if ((-not (Is-SystemDll $dll)) -and (-not (Test-Path (Join-Path $OutputDir $dll)))) {
+                $MissingDlls.Add($dll) | Out-Null
+            }
+        }
+    }
 } else {
     # Fallback: copy all Wireshark DLLs when import inspection is unavailable.
     Get-ChildItem -Path $WiresharkDir -Filter "*.dll" -ErrorAction SilentlyContinue | ForEach-Object {
         Copy-Item $_.FullName (Join-Path $OutputDir $_.Name) -Force
         $CopiedDlls.Add($_.Name) | Out-Null
     }
+    New-AliasCopiesInOutput -Dir $OutputDir
 }
 
 if ($MissingDlls.Count -gt 0) {
