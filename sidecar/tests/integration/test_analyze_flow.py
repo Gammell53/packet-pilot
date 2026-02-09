@@ -7,7 +7,12 @@ including tool calling and context building.
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
-from packet_pilot_ai.services.ai_agent import analyze_packets, call_llm, execute_tool
+from packet_pilot_ai.services.ai_agent import (
+    analyze_packets,
+    call_llm,
+    execute_tool,
+    stream_analyze_packets,
+)
 from packet_pilot_ai.models.schemas import CaptureContext, ChatMessage
 from tests.fixtures import (
     MockLLMResponse,
@@ -348,3 +353,81 @@ class TestRetryBehavior:
             assert "capture" in text.lower()
             assert mock_client.chat.completions.create.call_count == 2
             mock_sleep.assert_called_once()
+
+
+class TestLoopMetadataAndBudgets:
+    """Test request metadata and bounded-loop behavior."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_analyze_response_includes_request_metadata(self):
+        """Non-stream analyze should expose request_id/status metadata."""
+        mock_client = create_mock_client(return_value=SIMPLE_TEXT_RESPONSE.to_openai_format())
+        context = create_test_context()
+
+        with patch("packet_pilot_ai.services.ai_agent.get_openrouter_client", return_value=mock_client):
+            result = await analyze_packets(
+                "Summarize traffic",
+                context,
+                {},
+                [],
+                request_id="req-test-001",
+            )
+
+        assert result.request_id == "req-test-001"
+        assert result.completion_status == "complete"
+        assert result.stop_reason == "completed"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_analyze_returns_partial_on_model_budget_exceeded(self):
+        """Loop should return partial response when model-call budget is exhausted."""
+        mock_client = create_mock_client(return_value=SEARCH_TOOL_CALL.to_openai_format())
+        context = create_test_context()
+
+        with patch("packet_pilot_ai.services.ai_agent.get_openrouter_client", return_value=mock_client), \
+             patch("packet_pilot_ai.services.ai_agent.search_packets", new_callable=AsyncMock) as mock_search, \
+             patch.dict("os.environ", {"AI_LOOP_MAX_MODEL_CALLS": "1"}, clear=False):
+            result = await analyze_packets(
+                "Find suspicious traffic",
+                context,
+                {},
+                [],
+                request_id="req-test-002",
+            )
+
+        mock_search.assert_not_called()
+        assert result.request_id == "req-test-002"
+        assert result.completion_status == "partial"
+        assert result.stop_reason == "max_model_calls_exceeded"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_stream_emits_meta_and_warning_events(self):
+        """Streaming path should emit meta and warning events for partial completion."""
+        context = create_test_context()
+
+        async def fake_stream(*_args, **kwargs):
+            loop_state = kwargs["loop_state"]
+            yield "chunk-one"
+            loop_state.completion_status = "partial"
+            loop_state.stop_reason = "max_wall_ms_exceeded"
+
+        with patch("packet_pilot_ai.services.ai_agent.call_llm_streaming", new=fake_stream):
+            events = []
+            async for event in stream_analyze_packets(
+                query="stream analysis",
+                context=context,
+                packet_data={},
+                history=[],
+                request_id="req-test-stream",
+            ):
+                events.append(event)
+
+        assert events[0]["type"] == "meta"
+        assert events[0]["request_id"] == "req-test-stream"
+        assert any(e.get("type") == "text" for e in events)
+        assert any(
+            e.get("type") == "warning" and e.get("stop_reason") == "max_wall_ms_exceeded"
+            for e in events
+        )

@@ -4,6 +4,9 @@ import json
 import os
 import asyncio
 import random
+import time
+import uuid
+import traceback
 from dataclasses import dataclass
 from typing import Any, Optional, AsyncIterator
 from openai import AsyncOpenAI, AuthenticationError, APIStatusError
@@ -348,6 +351,90 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+@dataclass
+class LoopPolicy:
+    max_iterations: int
+    max_tool_calls: int
+    max_wall_ms: int
+    max_model_calls: int
+
+    @classmethod
+    def from_env(cls) -> "LoopPolicy":
+        return cls(
+            max_iterations=max(1, _env_int("AI_LOOP_MAX_ITERATIONS", 5)),
+            max_tool_calls=max(1, _env_int("AI_LOOP_MAX_TOOL_CALLS", 12)),
+            max_wall_ms=max(1000, _env_int("AI_LOOP_MAX_WALL_MS", 15000)),
+            max_model_calls=max(1, _env_int("AI_LOOP_MAX_MODEL_CALLS", 6)),
+        )
+
+
+@dataclass
+class LoopState:
+    request_id: str
+    route: str
+    started_monotonic: float
+    iterations: int = 0
+    model_calls: int = 0
+    tool_calls: int = 0
+    retry_count: int = 0
+    completion_status: str = "complete"
+    stop_reason: str = "completed"
+
+
+@dataclass
+class LoopResult:
+    text: str
+    state: LoopState
+
+
+def _new_request_id() -> str:
+    return str(uuid.uuid4())
+
+
+def _elapsed_ms(state: LoopState) -> int:
+    return int((time.monotonic() - state.started_monotonic) * 1000)
+
+
+def _limit_note(stop_reason: str) -> str:
+    notes = {
+        "max_iterations_exceeded": "I reached the maximum reasoning iterations for this request.",
+        "max_tool_calls_exceeded": "I reached the maximum tool-call budget for this request.",
+        "max_wall_ms_exceeded": "I reached the maximum execution time budget for this request.",
+        "max_model_calls_exceeded": "I reached the maximum model-call budget for this request.",
+    }
+    return notes.get(stop_reason, "I hit an execution limit while analyzing this request.")
+
+
+def _partial_text(last_text: str, stop_reason: str) -> str:
+    note = _limit_note(stop_reason)
+    base = (last_text or "I gathered partial results but hit an execution limit.").strip()
+    if note in base:
+        return base
+    return f"{base}\n\n{note}"
+
+
+def _current_limit_reason(state: LoopState, policy: LoopPolicy) -> str | None:
+    if _elapsed_ms(state) > policy.max_wall_ms:
+        return "max_wall_ms_exceeded"
+    if state.iterations >= policy.max_iterations:
+        return "max_iterations_exceeded"
+    if state.model_calls >= policy.max_model_calls:
+        return "max_model_calls_exceeded"
+    if state.tool_calls >= policy.max_tool_calls:
+        return "max_tool_calls_exceeded"
+    return None
+
+
+def _mark_partial(state: LoopState, stop_reason: str) -> None:
+    state.completion_status = "partial"
+    state.stop_reason = stop_reason
+
+
+def _mark_complete(state: LoopState) -> None:
+    state.completion_status = "complete"
+    state.stop_reason = "completed"
+
+
 def _tool_error(
     tool_name: str,
     code: str,
@@ -460,6 +547,7 @@ async def _create_chat_completion_with_retry(
     request_kwargs: dict[str, Any],
     *,
     operation: str,
+    loop_state: LoopState | None = None,
 ):
     max_attempts = max(1, _env_int("AI_RETRY_MAX_ATTEMPTS", 3))
     base_delay = max(0.05, _env_float("AI_RETRY_BASE_DELAY_SECONDS", 0.4))
@@ -474,6 +562,8 @@ async def _create_chat_completion_with_retry(
 
             delay = min(max_delay, base_delay * (2 ** (attempt - 1)))
             delay *= random.uniform(0.8, 1.2)
+            if loop_state is not None:
+                loop_state.retry_count += 1
             log(
                 f"{operation} transient failure ({type(exc).__name__}); "
                 f"retrying {attempt + 1}/{max_attempts} in {delay:.2f}s"
@@ -865,18 +955,44 @@ def log(msg: str):
     sys.stdout.flush()
 
 
-async def call_llm(
+def _log_loop_event(event: str, state: LoopState, **fields: Any) -> None:
+    payload: dict[str, Any] = {
+        "event": event,
+        "request_id": state.request_id,
+        "route": state.route,
+        "iteration": state.iterations,
+        "model_calls": state.model_calls,
+        "tool_calls": state.tool_calls,
+        "retry_count": state.retry_count,
+        "elapsed_ms": _elapsed_ms(state),
+        "completion_status": state.completion_status,
+        "stop_reason": state.stop_reason,
+    }
+    payload.update(fields)
+    logger.info(json.dumps(payload, ensure_ascii=True, sort_keys=True))
+
+
+async def _run_llm_loop(
     messages: list[dict],
     system: str,
     max_tokens: int = 1024,
     use_tools: bool = False,
     model_override: str | None = None,
-) -> str:
-    """Call the OpenRouter API with optional tool support."""
+    request_id: str | None = None,
+    route: str = "llm_loop",
+) -> LoopResult:
+    """Run a bounded model/tool loop and return text + loop metadata."""
     client = get_openrouter_client()
     model = model_override or get_model()
+    policy = LoopPolicy.from_env()
+    state = LoopState(
+        request_id=request_id or _new_request_id(),
+        route=route,
+        started_monotonic=time.monotonic(),
+    )
 
-    log(f"LLM request: model={model}, tools={use_tools}")
+    log(f"LLM request: model={model}, tools={use_tools}, request_id={state.request_id}")
+    _log_loop_event("loop.start", state, model=model, tools=use_tools)
 
     # OpenRouter uses OpenAI format - system message goes in messages array
     full_messages = [{"role": "system", "content": system}] + messages
@@ -885,6 +1001,12 @@ async def call_llm(
     # but returning empty responses is worse, so we enable tools and handle errors
 
     try:
+        reason = _current_limit_reason(state, policy)
+        if reason:
+            _mark_partial(state, reason)
+            _log_loop_event("loop.stop", state, model=model, tools=use_tools)
+            return LoopResult(text=_partial_text("", reason), state=state)
+
         # Make initial request
         kwargs = {
             "model": model,
@@ -895,11 +1017,15 @@ async def call_llm(
             kwargs["tools"] = TOOLS
             kwargs["tool_choice"] = "auto"
 
+        state.model_calls += 1
+        _log_loop_event("model.call.start", state, model=model, operation="initial")
         response = await _create_chat_completion_with_retry(
             client,
             kwargs,
             operation="initial completion",
+            loop_state=state,
         )
+        _log_loop_event("model.call.end", state, model=model, operation="initial")
         log("Response received")
         message = response.choices[0].message
         log(f"Response content length: {len(message.content) if message.content else 0}")
@@ -907,16 +1033,22 @@ async def call_llm(
         if not message.content:
             log(f"WARNING: Empty content. Full message: {message}")
 
-        # Handle tool calls in a loop (max 5 iterations to prevent infinite loops)
-        max_iterations = 5
         current_message = message
 
-        for iteration in range(max_iterations):
-            log(f"Iteration {iteration + 1}: has_tool_calls={bool(current_message.tool_calls)}")
-
+        while True:
+            log(f"Iteration {state.iterations + 1}: has_tool_calls={bool(current_message.tool_calls)}")
             if not current_message.tool_calls:
-                # No more tool calls, return the content
-                return current_message.content or ""
+                _mark_complete(state)
+                _log_loop_event("loop.stop", state, model=model, tools=use_tools)
+                return LoopResult(text=current_message.content or "", state=state)
+
+            reason = _current_limit_reason(state, policy)
+            if reason:
+                _mark_partial(state, reason)
+                _log_loop_event("loop.stop", state, model=model, tools=use_tools)
+                return LoopResult(text=_partial_text(current_message.content or "", reason), state=state)
+
+            state.iterations += 1
 
             # Add assistant's tool call message
             full_messages.append({
@@ -937,8 +1069,16 @@ async def call_llm(
 
             # Execute each tool and add results
             for tool_call in current_message.tool_calls:
+                reason = _current_limit_reason(state, policy)
+                if reason:
+                    _mark_partial(state, reason)
+                    _log_loop_event("loop.stop", state, model=model, tools=use_tools)
+                    return LoopResult(text=_partial_text(current_message.content or "", reason), state=state)
+
                 tool_name = tool_call.function.name
                 raw_arguments = tool_call.function.arguments
+                state.tool_calls += 1
+                _log_loop_event("tool.call.start", state, tool_name=tool_name)
                 log(f"Executing tool: {tool_name} with args: {raw_arguments}")
                 args, parse_error = _decode_tool_arguments(tool_name, raw_arguments)
                 if parse_error:
@@ -946,6 +1086,7 @@ async def call_llm(
                 else:
                     result = await execute_tool(tool_name, args)
                 log(f"Tool result: {result[:200] if result else 'None'}...")
+                _log_loop_event("tool.call.end", state, tool_name=tool_name)
                 full_messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
@@ -953,7 +1094,15 @@ async def call_llm(
                 })
 
             # Get next response after tool execution
-            log(f"Making LLM call after tool execution (iteration {iteration + 1})...")
+            reason = _current_limit_reason(state, policy)
+            if reason:
+                _mark_partial(state, reason)
+                _log_loop_event("loop.stop", state, model=model, tools=use_tools)
+                return LoopResult(text=_partial_text(current_message.content or "", reason), state=state)
+
+            log(f"Making LLM call after tool execution (iteration {state.iterations})...")
+            state.model_calls += 1
+            _log_loop_event("model.call.start", state, model=model, operation="post_tools")
             next_response = await _create_chat_completion_with_retry(
                 client,
                 {
@@ -963,23 +1112,19 @@ async def call_llm(
                     "tools": TOOLS if use_tools else None,
                     "tool_choice": "auto" if use_tools else None,
                 },
-                operation=f"tool iteration {iteration + 1}",
+                operation=f"tool iteration {state.iterations}",
+                loop_state=state,
             )
+            _log_loop_event("model.call.end", state, model=model, operation="post_tools")
             current_message = next_response.choices[0].message
             log(f"Response content length: {len(current_message.content) if current_message.content else 0}")
             log(f"Response finish_reason: {next_response.choices[0].finish_reason}")
 
-            # If we got a response without tool calls, return it immediately
-            if not current_message.tool_calls:
-                log(f"Got final response after {iteration + 1} tool iterations")
-                return current_message.content or ""
-
-        # If we exhausted iterations, return whatever content we have
-        log(f"WARNING: Exhausted {max_iterations} tool call iterations, returning last response")
-        return current_message.content or "I ran into an issue processing your request. Please try again."
-
     except AuthenticationError as e:
         log(f"AuthenticationError: {e}")
+        state.completion_status = "error"
+        state.stop_reason = "authentication_error"
+        _log_loop_event("loop.stop", state, model=model, tools=use_tools, error_class=type(e).__name__)
         raise AIServiceError(
             str(e),
             "Invalid API key. Please update your OpenRouter API key in Settings."
@@ -988,6 +1133,16 @@ async def call_llm(
         log(f"APIStatusError: status_code={e.status_code}")
         log(f"APIStatusError message: {e.message}")
         log(f"APIStatusError body: {e.body}")
+        state.completion_status = "error"
+        state.stop_reason = "api_status_error"
+        _log_loop_event(
+            "loop.stop",
+            state,
+            model=model,
+            tools=use_tools,
+            error_class=type(e).__name__,
+            status_code=e.status_code,
+        )
         if e.status_code == 401:
             raise AIServiceError(
                 str(e),
@@ -1010,9 +1165,33 @@ async def call_llm(
             )
     except Exception as e:
         log(f"Unexpected error: {type(e).__name__}: {e}")
-        import traceback
+        state.completion_status = "error"
+        state.stop_reason = "unexpected_error"
+        _log_loop_event("loop.stop", state, model=model, tools=use_tools, error_class=type(e).__name__)
         traceback.print_exc()
         raise
+
+
+async def call_llm(
+    messages: list[dict],
+    system: str,
+    max_tokens: int = 1024,
+    use_tools: bool = False,
+    model_override: str | None = None,
+    request_id: str | None = None,
+    route: str = "llm_loop",
+) -> str:
+    """Compatibility wrapper that returns only the final text."""
+    result = await _run_llm_loop(
+        messages,
+        system,
+        max_tokens=max_tokens,
+        use_tools=use_tools,
+        model_override=model_override,
+        request_id=request_id,
+        route=route,
+    )
+    return result.text
 
 
 @dataclass
@@ -1029,6 +1208,10 @@ async def call_llm_streaming(
     max_tokens: int = 1024,
     use_tools: bool = False,
     model_override: str | None = None,
+    loop_policy: LoopPolicy | None = None,
+    loop_state: LoopState | None = None,
+    request_id: str | None = None,
+    route: str = "llm_stream",
 ) -> AsyncIterator[str]:
     """Call the OpenRouter API with streaming and optional tool support.
 
@@ -1040,19 +1223,31 @@ async def call_llm_streaming(
     """
     client = get_openrouter_client()
     model = model_override or get_model()
+    policy = loop_policy or LoopPolicy.from_env()
+    state = loop_state or LoopState(
+        request_id=request_id or _new_request_id(),
+        route=route,
+        started_monotonic=time.monotonic(),
+    )
 
-    log(f"LLM streaming request: model={model}, tools={use_tools}")
+    log(f"LLM streaming request: model={model}, tools={use_tools}, request_id={state.request_id}")
+    _log_loop_event("loop.start", state, model=model, tools=use_tools)
 
     # OpenRouter uses OpenAI format - system message goes in messages array
     full_messages = [{"role": "system", "content": system}] + messages
 
-    max_iterations = 5
-
     try:
-        for iteration in range(max_iterations):
-            log(f"Streaming iteration {iteration + 1}")
+        while True:
+            reason = _current_limit_reason(state, policy)
+            if reason:
+                _mark_partial(state, reason)
+                _log_loop_event("loop.stop", state, model=model, tools=use_tools)
+                return
 
-            # Build request kwargs
+            log(f"Streaming iteration {state.iterations + 1}")
+            state.model_calls += 1
+            _log_loop_event("model.call.start", state, model=model, operation="stream")
+
             kwargs = {
                 "model": model,
                 "max_tokens": max_tokens,
@@ -1066,25 +1261,21 @@ async def call_llm_streaming(
             stream = await _create_chat_completion_with_retry(
                 client,
                 kwargs,
-                operation=f"streaming iteration {iteration + 1}",
+                operation=f"streaming iteration {state.iterations + 1}",
+                loop_state=state,
             )
+            _log_loop_event("model.call.end", state, model=model, operation="stream")
 
-            # Accumulate the response
             accumulated_content = ""
             tool_calls: dict[int, ToolCallAccumulator] = {}
 
             async for chunk in stream:
                 if not chunk.choices:
                     continue
-
                 delta = chunk.choices[0].delta
-
-                # Yield text content immediately
                 if delta.content:
                     accumulated_content += delta.content
                     yield delta.content
-
-                # Accumulate tool calls (they come in pieces)
                 if delta.tool_calls:
                     for tc_delta in delta.tool_calls:
                         idx = tc_delta.index
@@ -1095,7 +1286,6 @@ async def call_llm_streaming(
                                 arguments=tc_delta.function.arguments if tc_delta.function and tc_delta.function.arguments else "",
                             )
                         else:
-                            # Append to existing
                             if tc_delta.id:
                                 tool_calls[idx].id = tc_delta.id
                             if tc_delta.function:
@@ -1104,15 +1294,20 @@ async def call_llm_streaming(
                                 if tc_delta.function.arguments:
                                     tool_calls[idx].arguments += tc_delta.function.arguments
 
-            # Check if we have tool calls to execute
             if not tool_calls:
-                log(f"Streaming complete after {iteration + 1} iterations")
+                _mark_complete(state)
+                _log_loop_event("loop.stop", state, model=model, tools=use_tools)
                 return
 
-            # Execute tool calls
+            reason = _current_limit_reason(state, policy)
+            if reason:
+                _mark_partial(state, reason)
+                _log_loop_event("loop.stop", state, model=model, tools=use_tools)
+                return
+
+            state.iterations += 1
             log(f"Executing {len(tool_calls)} tool calls")
 
-            # Add assistant message with tool calls to history
             tool_calls_for_message = [
                 {
                     "id": tc.id,
@@ -1130,15 +1325,22 @@ async def call_llm_streaming(
                 "tool_calls": tool_calls_for_message
             })
 
-            # Execute each tool and add results
             for tc in tool_calls.values():
+                reason = _current_limit_reason(state, policy)
+                if reason:
+                    _mark_partial(state, reason)
+                    _log_loop_event("loop.stop", state, model=model, tools=use_tools)
+                    return
+
+                state.tool_calls += 1
+                _log_loop_event("tool.call.start", state, tool_name=tc.name)
                 log(f"Executing tool: {tc.name}")
                 args, parse_error = _decode_tool_arguments(tc.name, tc.arguments)
                 if parse_error:
                     result = parse_error
                 else:
                     result = await execute_tool(tc.name, args)
-
+                _log_loop_event("tool.call.end", state, tool_name=tc.name)
                 log(f"Tool result: {result[:200] if result else 'None'}...")
 
                 full_messages.append({
@@ -1147,21 +1349,27 @@ async def call_llm_streaming(
                     "content": result
                 })
 
-            # Yield a marker that tools were executed (UI can show this)
-            yield "\n\n"  # Small visual break before continuing
-
-        # If we exhausted iterations, yield a helpful message
-        log(f"WARNING: Exhausted {max_iterations} streaming iterations")
-        yield "\n\n*I've searched extensively but couldn't find the specific information. Try rephrasing your question or being more specific about what you're looking for.*"
-
     except AuthenticationError as e:
         log(f"AuthenticationError: {e}")
+        state.completion_status = "error"
+        state.stop_reason = "authentication_error"
+        _log_loop_event("loop.stop", state, model=model, tools=use_tools, error_class=type(e).__name__)
         raise AIServiceError(
             str(e),
             "Invalid API key. Please update your OpenRouter API key in Settings."
         )
     except APIStatusError as e:
         log(f"APIStatusError: status_code={e.status_code}")
+        state.completion_status = "error"
+        state.stop_reason = "api_status_error"
+        _log_loop_event(
+            "loop.stop",
+            state,
+            model=model,
+            tools=use_tools,
+            error_class=type(e).__name__,
+            status_code=e.status_code,
+        )
         if e.status_code == 401:
             raise AIServiceError(str(e), "Invalid API key.")
         elif e.status_code == 402:
@@ -1172,6 +1380,9 @@ async def call_llm_streaming(
             raise AIServiceError(str(e), f"AI service error ({e.status_code}).")
     except Exception as e:
         log(f"Streaming error: {type(e).__name__}: {e}")
+        state.completion_status = "error"
+        state.stop_reason = "unexpected_error"
+        _log_loop_event("loop.stop", state, model=model, tools=use_tools, error_class=type(e).__name__)
         raise
 
 
@@ -1181,6 +1392,7 @@ async def analyze_packets(
     packet_data: dict,
     history: list[ChatMessage],
     model: str | None = None,
+    request_id: str | None = None,
 ) -> AnalyzeResponse:
     """Analyze packets based on user query and context."""
     # Build context message (skip slow capture-stats call for faster responses)
@@ -1217,7 +1429,16 @@ Query: {query}"""
     messages.append({"role": "user", "content": user_message})
 
     # Call LLM with tool support enabled
-    response_text = await call_llm(messages, SYSTEM_PROMPT, max_tokens=1024, use_tools=True, model_override=model)
+    loop_result = await _run_llm_loop(
+        messages,
+        SYSTEM_PROMPT,
+        max_tokens=1024,
+        use_tools=True,
+        model_override=model,
+        request_id=request_id,
+        route="analyze",
+    )
+    response_text = loop_result.text
 
     # Check if response suggests a filter
     suggested_filter = None
@@ -1239,6 +1460,9 @@ Query: {query}"""
         message=response_text or "I couldn't generate a response. Please try again.",
         suggested_filter=suggested_filter,
         suggested_action=suggested_action,
+        request_id=loop_result.state.request_id,
+        completion_status=loop_result.state.completion_status,
+        stop_reason=loop_result.state.stop_reason,
     )
 
 
@@ -1248,7 +1472,8 @@ async def stream_analyze_packets(
     packet_data: dict,
     history: list[ChatMessage],
     model: str | None = None,
-) -> AsyncIterator[str]:
+    request_id: str | None = None,
+) -> AsyncIterator[dict[str, Any]]:
     """Stream analyze packets - yields text chunks as they arrive.
 
     Supports tool calling: when the AI needs to search packets, follow streams,
@@ -1286,11 +1511,35 @@ Query: {query}"""
 
     messages.append({"role": "user", "content": user_message})
 
+    policy = LoopPolicy.from_env()
+    state = LoopState(
+        request_id=request_id or _new_request_id(),
+        route="analyze_stream",
+        started_monotonic=time.monotonic(),
+    )
+
+    yield {"type": "meta", "request_id": state.request_id}
+
     # Stream the response with tool support enabled
     async for chunk in call_llm_streaming(
-        messages, SYSTEM_PROMPT, max_tokens=1024, use_tools=True, model_override=model
+        messages,
+        SYSTEM_PROMPT,
+        max_tokens=1024,
+        use_tools=True,
+        model_override=model,
+        loop_policy=policy,
+        loop_state=state,
+        request_id=state.request_id,
+        route="analyze_stream",
     ):
-        yield chunk
+        yield {"type": "text", "text": chunk}
+
+    if state.completion_status == "partial":
+        yield {
+            "type": "warning",
+            "warning": "limit_exhausted",
+            "stop_reason": state.stop_reason,
+        }
 
 
 def _format_protocol_hierarchy(hierarchy: list, indent: int = 0) -> str:

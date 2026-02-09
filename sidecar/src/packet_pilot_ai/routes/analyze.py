@@ -2,6 +2,7 @@
 
 import json
 import sys
+import uuid
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
@@ -21,7 +22,8 @@ def log(msg: str):
 @router.post("/analyze", response_model=AnalyzeResponse)
 async def analyze(request: AnalyzeRequest) -> AnalyzeResponse:
     """Analyze packets based on user query and context."""
-    log(f"Received analyze request: query='{request.query[:50]}...'")
+    request_id = str(uuid.uuid4())
+    log(f"Received analyze request: request_id={request_id} query='{request.query[:50]}...'")
     try:
         # Gather minimal context data from Rust
         # (visible_frames removed - agent uses tools for progressive disclosure)
@@ -42,9 +44,13 @@ async def analyze(request: AnalyzeRequest) -> AnalyzeResponse:
             packet_data=context_data,
             history=request.conversation_history,
             model=request.model,
+            request_id=request_id,
         )
 
-        log(f"AI response received: {result.message[:100]}...")
+        log(
+            f"AI response received: request_id={result.request_id} "
+            f"status={result.completion_status} stop_reason={result.stop_reason}"
+        )
         return result
 
     except AIServiceError as e:
@@ -68,7 +74,8 @@ async def analyze_stream(request: AnalyzeRequest):
     Final event: data: [DONE]\n\n
     Error event: data: {"error": "message"}\n\n
     """
-    log(f"Received streaming analyze request: query='{request.query[:50]}...'")
+    request_id = str(uuid.uuid4())
+    log(f"Received streaming analyze request: request_id={request_id} query='{request.query[:50]}...'")
 
     async def generate():
         try:
@@ -84,14 +91,23 @@ async def analyze_stream(request: AnalyzeRequest):
 
             # Stream the AI response
             log("Starting AI stream...")
-            async for chunk in stream_analyze_packets(
+            async for event in stream_analyze_packets(
                 query=request.query,
                 context=request.context,
                 packet_data=context_data,
                 history=request.conversation_history,
                 model=request.model,
+                request_id=request_id,
             ):
-                yield f"data: {json.dumps({'text': chunk})}\n\n"
+                event_type = event.get("type")
+                if event_type == "meta":
+                    yield f"data: {json.dumps({'meta': {'request_id': event.get('request_id')}})}\n\n"
+                elif event_type == "text":
+                    yield f"data: {json.dumps({'text': event.get('text', '')})}\n\n"
+                elif event_type == "warning":
+                    yield (
+                        f"data: {json.dumps({'warning': event.get('warning'), 'stop_reason': event.get('stop_reason')})}\n\n"
+                    )
 
             log("Stream complete")
             yield "data: [DONE]\n\n"
