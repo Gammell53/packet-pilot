@@ -4,7 +4,7 @@ mod sharkd_client;
 
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use sharkd_client::{Frame, SharkdClient, Status};
+use sharkd_client::{Frame, InstallHealthStatus, SharkdClient, Status};
 use std::sync::OnceLock;
 use tauri::Emitter;
 
@@ -219,6 +219,12 @@ fn get_ai_sidecar_status() -> python_sidecar::SidecarStatus {
     python_sidecar::get_sidecar_status()
 }
 
+/// Validate local installation/runtime requirements for sharkd.
+#[tauri::command]
+fn get_install_health() -> InstallHealthStatus {
+    sharkd_client::get_install_health()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -234,6 +240,7 @@ pub fn run() {
             check_filter,
             apply_filter,
             get_frame_details,
+            get_install_health,
             start_ai_sidecar,
             stop_ai_sidecar,
             get_ai_sidecar_status

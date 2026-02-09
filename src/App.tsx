@@ -36,8 +36,11 @@ function App() {
     totalFrames,
     fileName,
     duration,
+    installHealth,
     loadFile,
     clearError,
+    runInstallHealthCheck,
+    retryInitialization,
   } = useSharkd();
 
   // UI State
@@ -248,6 +251,14 @@ function App() {
   const avgPacketRate =
     duration && effectiveTotalFrames > 0 ? effectiveTotalFrames / duration : undefined;
 
+  const openTroubleshooting = useCallback(() => {
+    window.open(
+      "https://github.com/Gammell53/packet-pilot#windows-troubleshooting",
+      "_blank",
+      "noopener,noreferrer"
+    );
+  }, []);
+
   return (
     <div className="app">
       <Header
@@ -273,8 +284,33 @@ function App() {
       )}
 
       {error && (
-        <div className="error-banner">
-          <pre className="error-message">{error}</pre>
+        <div className={`error-banner ${installHealth && !installHealth.ok ? "install-health-banner" : ""}`}>
+          <div className="error-content">
+            <pre className="error-message">{error}</pre>
+            {installHealth && !installHealth.ok && (
+              <div className="error-actions">
+                <button
+                  className="action-button"
+                  onClick={() => {
+                    void runInstallHealthCheck();
+                  }}
+                >
+                  Retry Check
+                </button>
+                <button
+                  className="action-button"
+                  onClick={() => {
+                    void retryInitialization();
+                  }}
+                >
+                  Retry Startup
+                </button>
+                <button className="action-button" onClick={openTroubleshooting}>
+                  Troubleshooting
+                </button>
+              </div>
+            )}
+          </div>
           <button onClick={clearError}>×</button>
         </div>
       )}
