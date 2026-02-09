@@ -1,7 +1,13 @@
 import { useState, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { LoadResult, FramesResult, FrameData, FrameDetails } from "../types";
+import type {
+  LoadResult,
+  FramesResult,
+  FrameData,
+  FrameDetails,
+  InstallHealthStatus,
+} from "../types";
 
 interface UseSharkdReturn {
   // State
@@ -12,6 +18,7 @@ interface UseSharkdReturn {
   totalFrames: number;
   fileName: string | null;
   duration: number | null;
+  installHealth: InstallHealthStatus | null;
   
   // Actions
   loadFile: (path: string) => Promise<boolean>;
@@ -19,8 +26,27 @@ interface UseSharkdReturn {
   applyFilter: (filter: string) => Promise<boolean>;
   checkFilter: (filter: string) => Promise<boolean>;
   getFrameDetails: (frameNum: number) => Promise<FrameDetails | null>;
+  runInstallHealthCheck: () => Promise<InstallHealthStatus | null>;
+  retryInitialization: () => Promise<boolean>;
   clearError: () => void;
   reset: () => void;
+}
+
+function formatInstallHealthError(health: InstallHealthStatus): string {
+  if (health.ok) return "";
+
+  const issueLines = health.issues.slice(0, 5).map((issue) => {
+    const pathSuffix = issue.path ? ` (${issue.path})` : "";
+    return `- ${issue.message}${pathSuffix}`;
+  });
+
+  return [
+    "PacketPilot installation needs repair.",
+    "",
+    ...issueLines,
+    "",
+    "Use the repair instructions or reinstall using the latest Windows installer.",
+  ].join("\n");
 }
 
 export function useSharkd(): UseSharkdReturn {
@@ -31,6 +57,73 @@ export function useSharkd(): UseSharkdReturn {
   const [totalFrames, setTotalFrames] = useState(0);
   const [fileName, setFileName] = useState<string | null>(null);
   const [duration, setDuration] = useState<number | null>(null);
+  const [installHealth, setInstallHealth] = useState<InstallHealthStatus | null>(null);
+
+  const runInstallHealthCheck = useCallback(async (): Promise<InstallHealthStatus | null> => {
+    try {
+      const health = await invoke<InstallHealthStatus>("get_install_health");
+      setInstallHealth(health);
+
+      if (!health.ok) {
+        setIsReady(false);
+        setError(formatInstallHealthError(health));
+      } else {
+        setError((prev) =>
+          prev?.startsWith("PacketPilot installation needs repair.") ? null : prev
+        );
+      }
+
+      return health;
+    } catch (e) {
+      console.error("Failed to run install health check:", e);
+      return null;
+    }
+  }, []);
+
+  const initializeSharkd = useCallback(async (): Promise<boolean> => {
+    // Try to connect to sharkd with retries
+    for (let i = 0; i < 10; i++) {
+      try {
+        if (typeof invoke !== "function") {
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          continue;
+        }
+
+        await invoke("get_status");
+        setIsReady(true);
+        setError(null);
+        return true;
+      } catch {
+        try {
+          await invoke("init_sharkd");
+          setIsReady(true);
+          setError(null);
+          return true;
+        } catch (e) {
+          if (i === 9) {
+            const errMsg = e instanceof Error ? e.message : String(e);
+            setError(`Failed to initialize sharkd: ${errMsg}`);
+          } else {
+            await new Promise((resolve) => setTimeout(resolve, 500));
+          }
+        }
+      }
+    }
+
+    return false;
+  }, []);
+
+  const retryInitialization = useCallback(async (): Promise<boolean> => {
+    setError(null);
+    setIsReady(false);
+
+    const health = await runInstallHealthCheck();
+    if (health && !health.ok) {
+      return false;
+    }
+
+    return initializeSharkd();
+  }, [initializeSharkd, runInstallHealthCheck]);
 
   // Initialize sharkd on mount
   useEffect(() => {
@@ -48,41 +141,14 @@ export function useSharkd(): UseSharkdReturn {
         console.error("Failed to set up listener:", e);
       }
 
-      // Try to connect to sharkd with retries
-      for (let i = 0; i < 10; i++) {
-        if (cancelled) return;
-
-        try {
-          if (typeof invoke !== "function") {
-            await new Promise((resolve) => setTimeout(resolve, 300));
-            continue;
-          }
-
-          await invoke("get_status");
-          if (!cancelled) {
-            setIsReady(true);
-            setError(null);
-          }
-          return;
-        } catch {
-          try {
-            await invoke("init_sharkd");
-            if (!cancelled) {
-              setIsReady(true);
-              setError(null);
-            }
-            return;
-          } catch (e) {
-            if (i === 9 && !cancelled) {
-              const errMsg = e instanceof Error ? e.message : String(e);
-              // Show full error message including debug info
-              setError(`Failed to initialize sharkd: ${errMsg}`);
-            } else {
-              await new Promise((resolve) => setTimeout(resolve, 500));
-            }
-          }
-        }
+      if (cancelled) return;
+      const health = await runInstallHealthCheck();
+      if (cancelled) return;
+      if (health && !health.ok) {
+        return;
       }
+
+      await initializeSharkd();
     };
 
     const timer = setTimeout(setup, 500);
@@ -92,7 +158,7 @@ export function useSharkd(): UseSharkdReturn {
       clearTimeout(timer);
       if (unlistenFn) unlistenFn();
     };
-  }, []);
+  }, [initializeSharkd, runInstallHealthCheck]);
 
   const loadFile = useCallback(async (path: string): Promise<boolean> => {
     setIsLoading(true);
@@ -206,11 +272,14 @@ export function useSharkd(): UseSharkdReturn {
     totalFrames,
     fileName,
     duration,
+    installHealth,
     loadFile,
     loadFrames,
     applyFilter,
     checkFilter,
     getFrameDetails,
+    runInstallHealthCheck,
+    retryInitialization,
     clearError,
     reset,
   };

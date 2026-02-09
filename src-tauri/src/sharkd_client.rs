@@ -1,8 +1,9 @@
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::BTreeSet;
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -205,6 +206,24 @@ pub struct SharkdClient {
     request_id: AtomicU64,
 }
 
+/// Installation issue returned to the frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstallIssue {
+    pub code: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+/// Install/runtime health status returned to the frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstallHealthStatus {
+    pub ok: bool,
+    pub issues: Vec<InstallIssue>,
+    pub checked_paths: Vec<String>,
+    pub recommended_action: String,
+}
+
 /// Get the target triple for the current platform
 fn get_target_triple() -> &'static str {
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
@@ -232,123 +251,324 @@ fn get_target_triple() -> &'static str {
     return "unknown";
 }
 
-/// Find the sharkd binary - tries bundled first (production), then system PATH (dev)
-fn find_sharkd() -> Result<PathBuf, String> {
-    let mut debug_info = Vec::new();
-    debug_info.push("=== Sharkd Detection Debug ===".to_string());
+fn is_production_mode(exe_path: &Path) -> bool {
+    let path_str = exe_path.to_string_lossy();
+    !path_str.contains("target/debug") && !path_str.contains("target/release")
+}
 
-    // In production, try bundled sharkd first
-    match std::env::current_exe() {
-        Ok(exe_path) => {
-            debug_info.push(format!("Current executable: {:?}", exe_path));
-            let path_str = exe_path.to_string_lossy();
-            let is_production =
-                !path_str.contains("target/debug") && !path_str.contains("target/release");
-            debug_info.push(format!("Is production mode: {}", is_production));
+fn bundled_sharkd_candidates(exe_dir: &Path) -> Vec<PathBuf> {
+    let target = get_target_triple();
+    #[cfg(target_os = "windows")]
+    {
+        vec![
+            exe_dir.join(format!("sharkd-{}.exe", target)),
+            // Compatibility fallback for old builds.
+            exe_dir.join("sharkd.exe"),
+        ]
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        vec![
+            exe_dir.join(format!("sharkd-wrapper-{}", target)),
+            exe_dir.join(format!("sharkd-{}", target)),
+            // Compatibility fallback for older packaging.
+            exe_dir.join("sharkd"),
+        ]
+    }
+}
 
-            if is_production {
-                if let Some(exe_dir) = exe_path.parent() {
-                    debug_info.push(format!("Executable directory: {:?}", exe_dir));
-                    let target_triple = get_target_triple();
-                    debug_info.push(format!("Target triple: {}", target_triple));
-
-                    // List all files in exe_dir for debugging
-                    if let Ok(entries) = std::fs::read_dir(exe_dir) {
-                        let files: Vec<String> = entries
-                            .filter_map(|e| e.ok())
-                            .map(|e| e.file_name().to_string_lossy().to_string())
-                            .collect();
-                        debug_info.push(format!("Files in exe_dir ({} total): {:?}", files.len(), files.iter().take(20).collect::<Vec<_>>()));
-                        if files.len() > 20 {
-                            debug_info.push(format!("  ... and {} more files", files.len() - 20));
-                        }
-                    } else {
-                        debug_info.push("Failed to list files in exe_dir".to_string());
-                    }
-
-                    // Try the wrapper script first (sets up LD_LIBRARY_PATH)
-                    #[cfg(not(target_os = "windows"))]
-                    {
-                        let wrapper_name = format!("sharkd-wrapper-{}", target_triple);
-                        let wrapper_path = exe_dir.join(&wrapper_name);
-                        debug_info.push(format!("Checking wrapper: {:?} (exists: {})", wrapper_path, wrapper_path.exists()));
-                        if wrapper_path.exists() {
-                            println!("{}", debug_info.join("\n"));
-                            println!("Using bundled sharkd wrapper at: {:?}", wrapper_path);
-                            return Ok(wrapper_path);
-                        }
-                    }
-
-                    // Try direct binary
-                    #[cfg(target_os = "windows")]
-                    let sidecar_name = format!("sharkd-{}.exe", target_triple);
-                    #[cfg(not(target_os = "windows"))]
-                    let sidecar_name = format!("sharkd-{}", target_triple);
-
-                    let sidecar_path = exe_dir.join(&sidecar_name);
-                    debug_info.push(format!("Checking sidecar: {:?} (exists: {})", sidecar_path, sidecar_path.exists()));
-                    if sidecar_path.exists() {
-                        println!("{}", debug_info.join("\n"));
-                        println!("Found bundled sharkd at: {:?}", sidecar_path);
-                        return Ok(sidecar_path);
-                    }
-                } else {
-                    debug_info.push("Failed to get parent directory of executable".to_string());
-                }
+#[cfg(target_os = "windows")]
+fn add_windows_path_candidates(paths: &mut Vec<PathBuf>, debug_info: &mut Vec<String>) {
+    // Prefer PATH detection in both dev and production fallback mode.
+    match Command::new("where").arg("sharkd").output() {
+        Ok(output) if output.status.success() => {
+            let found = String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .map(PathBuf::from)
+                .collect::<Vec<_>>();
+            if found.is_empty() {
+                debug_info.push("'where sharkd' succeeded but returned no paths".to_string());
             } else {
-                debug_info.push("Development mode - skipping bundled sharkd check".to_string());
+                debug_info.push(format!("'where sharkd' found {} path(s)", found.len()));
+                paths.extend(found);
             }
         }
-        Err(e) => {
-            debug_info.push(format!("Failed to get current executable: {}", e));
-        }
+        Ok(_) => debug_info.push("'where sharkd' did not find sharkd in PATH".to_string()),
+        Err(e) => debug_info.push(format!("Failed to execute 'where sharkd': {}", e)),
     }
 
-    // Fall back to system sharkd (development mode or if bundled not found)
-    debug_info.push("Falling back to system sharkd...".to_string());
+    for p in [
+        r"C:\Program Files\Wireshark\sharkd.exe",
+        r"C:\Program Files (x86)\Wireshark\sharkd.exe",
+    ] {
+        paths.push(PathBuf::from(p));
+    }
+}
+
+fn system_sharkd_candidates(debug_info: &mut Vec<String>) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
 
     #[cfg(target_os = "windows")]
     {
-        // On Windows, check standard Wireshark installation paths
-        let windows_paths = [
-            r"C:\Program Files\Wireshark\sharkd.exe",
-            r"C:\Program Files (x86)\Wireshark\sharkd.exe",
-        ];
-        for path in &windows_paths {
-            let path_buf = PathBuf::from(path);
-            let exists = path_buf.exists();
-            debug_info.push(format!("Checking system path: {} (exists: {})", path, exists));
-            if exists {
-                println!("{}", debug_info.join("\n"));
-                println!("Found system sharkd at: {}", path);
-                return Ok(path_buf);
-            }
-        }
+        add_windows_path_candidates(&mut paths, debug_info);
     }
 
     #[cfg(not(target_os = "windows"))]
     {
-        if let Ok(output) = std::process::Command::new("which").arg("sharkd").output() {
-            if output.status.success() {
+        match Command::new("which").arg("sharkd").output() {
+            Ok(output) if output.status.success() => {
                 let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 if !path.is_empty() {
+                    paths.push(PathBuf::from(path));
+                } else {
+                    debug_info.push("'which sharkd' returned empty output".to_string());
+                }
+            }
+            Ok(_) => debug_info.push("'which sharkd' did not find sharkd in PATH".to_string()),
+            Err(e) => debug_info.push(format!("Failed to execute 'which sharkd': {}", e)),
+        }
+    }
+
+    let mut unique = BTreeSet::new();
+    paths
+        .into_iter()
+        .filter(|p| unique.insert(p.clone()))
+        .collect::<Vec<_>>()
+}
+
+#[cfg(target_os = "windows")]
+fn windows_required_runtime_files() -> Vec<&'static str> {
+    vec![
+        "libwireshark.dll",
+        "libwiretap.dll",
+        "libwsutil.dll",
+        "libglib-2.0-0.dll",
+        "libgcrypt-20.dll",
+    ]
+}
+
+#[cfg(target_os = "windows")]
+fn validate_windows_runtime(exe_dir: &Path, sharkd_path: &Path) -> Vec<InstallIssue> {
+    let mut issues = Vec::new();
+
+    if !sharkd_path.exists() {
+        issues.push(InstallIssue {
+            code: "missing_sharkd".to_string(),
+            message: "Bundled sharkd executable is missing.".to_string(),
+            path: Some(sharkd_path.display().to_string()),
+        });
+        return issues;
+    }
+
+    for file in windows_required_runtime_files() {
+        let p = exe_dir.join(file);
+        if !p.exists() {
+            issues.push(InstallIssue {
+                code: "missing_dependency".to_string(),
+                message: format!("Required runtime library is missing: {}", file),
+                path: Some(p.display().to_string()),
+            });
+        }
+    }
+
+    // Common mismatch from some Wireshark distributions.
+    if exe_dir.join("glib-2.0-0.dll").exists() && !exe_dir.join("libglib-2.0-0.dll").exists() {
+        issues.push(InstallIssue {
+            code: "invalid_bundle".to_string(),
+            message: "Found glib-2.0-0.dll but missing libglib-2.0-0.dll expected by bundled sharkd.".to_string(),
+            path: Some(exe_dir.display().to_string()),
+        });
+    }
+
+    issues
+}
+
+#[cfg(not(target_os = "windows"))]
+fn validate_windows_runtime(_exe_dir: &Path, _sharkd_path: &Path) -> Vec<InstallIssue> {
+    Vec::new()
+}
+
+fn find_sharkd_with_debug() -> Result<(PathBuf, Vec<String>), String> {
+    let mut debug_info = vec!["=== Sharkd Detection Debug ===".to_string()];
+
+    let mut exe_dir: Option<PathBuf> = None;
+    let mut is_production = false;
+    match std::env::current_exe() {
+        Ok(exe_path) => {
+            is_production = is_production_mode(&exe_path);
+            debug_info.push(format!("Current executable: {:?}", exe_path));
+            debug_info.push(format!("Is production mode: {}", is_production));
+            exe_dir = exe_path.parent().map(PathBuf::from);
+            if let Some(dir) = &exe_dir {
+                debug_info.push(format!("Executable directory: {:?}", dir));
+                debug_info.push(format!("Target triple: {}", get_target_triple()));
+            }
+        }
+        Err(e) => debug_info.push(format!("Failed to get current executable: {}", e)),
+    }
+
+    if let Some(dir) = &exe_dir {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            let files: Vec<String> = entries
+                .filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .collect();
+            debug_info.push(format!(
+                "Files in exe_dir ({} total): {:?}",
+                files.len(),
+                files.iter().take(20).collect::<Vec<_>>()
+            ));
+            if files.len() > 20 {
+                debug_info.push(format!("  ... and {} more files", files.len() - 20));
+            }
+        }
+    }
+
+    if is_production {
+        if let Some(dir) = &exe_dir {
+            for candidate in bundled_sharkd_candidates(dir) {
+                let exists = candidate.exists();
+                debug_info.push(format!(
+                    "Checking bundled path: {:?} (exists: {})",
+                    candidate, exists
+                ));
+                if exists {
                     println!("{}", debug_info.join("\n"));
-                    println!("Using system sharkd: {}", path);
-                    return Ok(PathBuf::from(path));
+                    println!("Using bundled sharkd at: {:?}", candidate);
+                    return Ok((candidate, debug_info));
                 }
             }
         }
-        debug_info.push("'which sharkd' did not find sharkd in PATH".to_string());
+    } else {
+        debug_info.push("Development mode - bundled path checks are optional".to_string());
     }
 
-    // Print all debug info before returning error
+    debug_info.push("Falling back to system sharkd discovery...".to_string());
+    for candidate in system_sharkd_candidates(&mut debug_info) {
+        let exists = candidate.exists();
+        debug_info.push(format!(
+            "Checking system path: {:?} (exists: {})",
+            candidate, exists
+        ));
+        if exists {
+            println!("{}", debug_info.join("\n"));
+            println!("Using system sharkd: {:?}", candidate);
+            return Ok((candidate, debug_info));
+        }
+    }
+
     let debug_output = debug_info.join("\n");
     eprintln!("{}", debug_output);
-
     Err(format!(
-        "Sharkd not found. Please install Wireshark.\n\nDebug info:\n{}",
+        "Sharkd not found. PacketPilot expects bundled sharkd or a Wireshark install with sharkd in PATH.\n\nDebug info:\n{}",
         debug_output
     ))
+}
+
+/// Find the sharkd binary path.
+fn find_sharkd() -> Result<PathBuf, String> {
+    let (path, _debug) = find_sharkd_with_debug()?;
+    Ok(path)
+}
+
+/// Get install/runtime health details for startup diagnostics.
+pub fn get_install_health() -> InstallHealthStatus {
+    let mut issues = Vec::new();
+    let mut checked_paths = Vec::new();
+
+    let exe_path = std::env::current_exe().ok();
+    let exe_dir = exe_path.as_ref().and_then(|p| p.parent().map(PathBuf::from));
+    let is_production = exe_path
+        .as_ref()
+        .map(|p| is_production_mode(p))
+        .unwrap_or(false);
+
+    if let Some(dir) = &exe_dir {
+        for p in bundled_sharkd_candidates(dir) {
+            checked_paths.push(p.display().to_string());
+        }
+    }
+
+    let mut debug = Vec::new();
+    for p in system_sharkd_candidates(&mut debug) {
+        checked_paths.push(p.display().to_string());
+    }
+
+    let sharkd_path = match find_sharkd_with_debug() {
+        Ok((path, _)) => path,
+        Err(e) => {
+            issues.push(InstallIssue {
+                code: "missing_sharkd".to_string(),
+                message: "Could not find sharkd binary in bundled or system locations.".to_string(),
+                path: None,
+            });
+            return InstallHealthStatus {
+                ok: false,
+                issues,
+                checked_paths,
+                recommended_action: format!("repair ({})", e.lines().next().unwrap_or("unknown")),
+            };
+        }
+    };
+
+    if cfg!(target_os = "windows") && is_production {
+        if let Some(dir) = &exe_dir {
+            let bundled_primary = dir.join(format!("sharkd-{}.exe", get_target_triple()));
+            issues.extend(validate_windows_runtime(dir, &bundled_primary));
+
+            if sharkd_path != bundled_primary {
+                issues.push(InstallIssue {
+                    code: "invalid_bundle".to_string(),
+                    message: "Bundled sharkd is missing or invalid; PacketPilot is currently relying on a system sharkd fallback.".to_string(),
+                    path: Some(sharkd_path.display().to_string()),
+                });
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    if issues.is_empty() {
+        match Command::new(&sharkd_path)
+            .arg("-v")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+        {
+            Ok(status) if status.success() => {}
+            Ok(status) => issues.push(InstallIssue {
+                code: "spawn_failed".to_string(),
+                message: format!("sharkd check returned non-zero status: {}", status),
+                path: Some(sharkd_path.display().to_string()),
+            }),
+            Err(e) => {
+                // Surface likely missing dependency names from Windows loader errors.
+                let error_msg = e.to_string();
+                let mut message =
+                    "sharkd failed to start; installation may be incomplete.".to_string();
+                if error_msg.to_ascii_lowercase().contains(".dll") {
+                    message = format!("sharkd failed to start: {}", error_msg);
+                }
+                issues.push(InstallIssue {
+                    code: "spawn_failed".to_string(),
+                    message,
+                    path: Some(sharkd_path.display().to_string()),
+                });
+            }
+        }
+    }
+
+    InstallHealthStatus {
+        ok: issues.is_empty(),
+        issues,
+        checked_paths,
+        recommended_action: if cfg!(target_os = "windows") {
+            "repair".to_string()
+        } else {
+            "none".to_string()
+        },
+    }
 }
 
 impl SharkdClient {
@@ -367,8 +587,8 @@ impl SharkdClient {
             .map_err(|e| {
                 format!(
                     "Failed to spawn sharkd at {:?}: {}. \n\
-                    Please ensure Wireshark is installed and sharkd is in your PATH, \n\
-                    or place the sharkd binary in the binaries/ folder.",
+                    Please run installation repair or reinstall PacketPilot. \n\
+                    If running from source, ensure Wireshark is installed and sharkd is in PATH.",
                     sharkd_path, e
                 )
             })?;

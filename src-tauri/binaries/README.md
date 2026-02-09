@@ -2,6 +2,10 @@
 
 This folder should contain platform-specific `sharkd` binaries for bundling with PacketPilot.
 
+On Windows, PacketPilot expects the canonical bundled filename:
+
+- `sharkd-x86_64-pc-windows-msvc.exe`
+
 ## Required Files
 
 Place the following binaries here (depending on target platforms):
@@ -69,3 +73,9 @@ brew install wireshark
 # Windows
 # Download installer from wireshark.org
 ```
+
+## Windows Bundling Notes
+
+- Use `scripts/bundle-sharkd.ps1` to bundle Windows binaries.
+- The script writes canonical files and validates imported DLL names.
+- It also keeps a compatibility copy (`sharkd.exe`) for legacy builds.
