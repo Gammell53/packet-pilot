@@ -37,6 +37,9 @@ class AnalyzeResponse(BaseModel):
     suggested_filter: Optional[str] = None
     suggested_action: Optional[Literal["apply_filter", "go_to_packet", "follow_stream"]] = None
     action_payload: Optional[dict] = None
+    request_id: Optional[str] = None
+    completion_status: Optional[Literal["complete", "partial", "error"]] = None
+    stop_reason: Optional[str] = None
 
 
 class FilterRequest(BaseModel):
