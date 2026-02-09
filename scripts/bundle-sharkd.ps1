@@ -1,5 +1,11 @@
-# Bundle sharkd for Windows distribution
-# Installs Wireshark via Chocolatey and copies sharkd.exe with dependencies
+# Bundle sharkd for Windows distribution.
+# Produces canonical Tauri binary names and copies the exact DLL names
+# required by sharkd imports when possible.
+
+param(
+    [string]$SharkdPath = "",
+    [string]$WiresharkDir = ""
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -9,157 +15,254 @@ $OutputDir = Join-Path $ProjectRoot "src-tauri\binaries"
 $LibsDir = Join-Path $OutputDir "wireshark-libs"
 $Target = "x86_64-pc-windows-msvc"
 
-Write-Host "Bundling sharkd for Windows..."
-
-# Create directories
-New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
-New-Item -ItemType Directory -Force -Path $LibsDir | Out-Null
-
-# Check if Wireshark is already installed
-$WiresharkDir = $null
-$PossiblePaths = @(
+$PossibleWiresharkDirs = @(
     "C:\Program Files\Wireshark",
     "C:\Program Files (x86)\Wireshark",
     "$env:ProgramFiles\Wireshark"
 )
 
-foreach ($path in $PossiblePaths) {
-    if (Test-Path (Join-Path $path "sharkd.exe")) {
-        $WiresharkDir = $path
-        Write-Host "Found existing Wireshark installation at: $WiresharkDir"
-        break
+$AliasMap = @{
+    "libglib-2.0-0.dll"     = @("glib-2.0-0.dll")
+    "libgmodule-2.0-0.dll"  = @("gmodule-2.0-0.dll")
+    "libgthread-2.0-0.dll"  = @("gthread-2.0-0.dll")
+    "libpcre2-8-0.dll"      = @("pcre2-8.dll")
+    "libcares-2.dll"        = @("cares.dll")
+    "liblzma-5.dll"         = @("liblzma.dll")
+    "libbrotlicommon.dll"   = @("brotlicommon.dll")
+    "libbrotlidec.dll"      = @("brotlidec.dll")
+    "libsnappy.dll"         = @("snappy.dll")
+    "libzstd.dll"           = @("zstd.dll")
+    "liblz4.dll"            = @("lz4.dll")
+    "libopus-0.dll"         = @("opus.dll")
+}
+
+function Get-ObjdumpPath {
+    $candidates = @(
+        "objdump.exe",
+        "C:\msys64\ucrt64\bin\objdump.exe",
+        "C:\msys64\mingw64\bin\objdump.exe"
+    )
+
+    foreach ($candidate in $candidates) {
+        $cmd = Get-Command $candidate -ErrorAction SilentlyContinue
+        if ($cmd) {
+            return $cmd.Source
+        }
+
+        if (Test-Path $candidate) {
+            return $candidate
+        }
+    }
+
+    return $null
+}
+
+function Get-ImportedDlls {
+    param(
+        [string]$BinaryPath,
+        [string]$ObjdumpPath
+    )
+
+    if (-not $ObjdumpPath -or -not (Test-Path $BinaryPath)) {
+        return @()
+    }
+
+    try {
+        $output = & $ObjdumpPath -p $BinaryPath 2>$null
+        if (-not $output) {
+            return @()
+        }
+
+        return @(
+            $output |
+                Select-String -Pattern '^\s*DLL Name:\s+(.+)$' |
+                ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() } |
+                Where-Object { $_ -and $_.ToLower().EndsWith('.dll') } |
+                Select-Object -Unique
+        )
+    } catch {
+        return @()
     }
 }
 
-# Install Wireshark via Chocolatey if not found
-if (-not $WiresharkDir) {
-    Write-Host "Wireshark not found. Installing via Chocolatey..."
+function Is-SystemDll {
+    param([string]$Name)
 
-    # Check if choco is available
-    if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
-        Write-Error "Chocolatey is not installed. Please install Wireshark manually."
-        exit 1
+    $n = $Name.ToLowerInvariant()
+    return $n.StartsWith("api-ms-win-") -or
+           $n -eq "kernel32.dll" -or
+           $n -eq "ws2_32.dll" -or
+           $n -eq "ntdll.dll" -or
+           $n -eq "ucrtbase.dll" -or
+           $n -eq "vcruntime140.dll" -or
+           $n -eq "vcruntime140_1.dll" -or
+           $n -eq "msvcp140.dll"
+}
+
+function Find-Dependency {
+    param(
+        [string]$DllName,
+        [string[]]$SearchDirs
+    )
+
+    foreach ($dir in $SearchDirs) {
+        $direct = Join-Path $dir $DllName
+        if (Test-Path $direct) {
+            return @{ Source = $direct; DestName = $DllName }
+        }
+
+        if ($AliasMap.ContainsKey($DllName)) {
+            foreach ($alias in $AliasMap[$DllName]) {
+                $aliasPath = Join-Path $dir $alias
+                if (Test-Path $aliasPath) {
+                    return @{ Source = $aliasPath; DestName = $DllName }
+                }
+            }
+        }
     }
 
-    # Install Wireshark (includes sharkd)
-    choco install wireshark -y --no-progress
+    return $null
+}
 
-    # Find the installation
-    foreach ($path in $PossiblePaths) {
+Write-Host "Bundling sharkd for Windows..."
+
+# Resolve Wireshark location if not provided.
+if (-not $WiresharkDir) {
+    foreach ($path in $PossibleWiresharkDirs) {
         if (Test-Path (Join-Path $path "sharkd.exe")) {
             $WiresharkDir = $path
             break
         }
     }
-
-    if (-not $WiresharkDir) {
-        Write-Error "Wireshark installation failed or sharkd.exe not found"
-        exit 1
-    }
-
-    Write-Host "Wireshark installed at: $WiresharkDir"
 }
 
-$SharkdPath = Join-Path $WiresharkDir "sharkd.exe"
-if (-not (Test-Path $SharkdPath)) {
-    Write-Error "sharkd.exe not found at: $SharkdPath"
+# Resolve sharkd path.
+if (-not $SharkdPath) {
+    if ($WiresharkDir) {
+        $candidate = Join-Path $WiresharkDir "sharkd.exe"
+        if (Test-Path $candidate) {
+            $SharkdPath = $candidate
+        }
+    }
+}
+
+if (-not $SharkdPath -or -not (Test-Path $SharkdPath)) {
+    Write-Error "sharkd.exe not found. Pass -SharkdPath or install Wireshark."
     exit 1
 }
 
-Write-Host "Found sharkd at: $SharkdPath"
+if (-not $WiresharkDir) {
+    $WiresharkDir = Split-Path -Parent $SharkdPath
+}
 
-# Copy sharkd.exe with target suffix
-$DestSharkd = Join-Path $OutputDir "sharkd-$Target.exe"
-Copy-Item $SharkdPath $DestSharkd -Force
-Write-Host "Copied: $DestSharkd"
+Write-Host "Using sharkd: $SharkdPath"
+Write-Host "Using Wireshark dir: $WiresharkDir"
 
-# Also create sharkd-wrapper (Tauri expects this - on Windows it's just a copy of sharkd)
+$SearchDirs = @(
+    $WiresharkDir,
+    "C:\msys64\ucrt64\bin",
+    "C:\msys64\mingw64\bin"
+) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
+
+# Create output directories.
+New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+New-Item -ItemType Directory -Force -Path $LibsDir | Out-Null
+
+# Canonical runtime names expected by Tauri + backend resolver.
+$DestCanonical = Join-Path $OutputDir "sharkd-$Target.exe"
 $DestWrapper = Join-Path $OutputDir "sharkd-wrapper-$Target.exe"
+$DestLegacy = Join-Path $OutputDir "sharkd.exe"
+
+Copy-Item $SharkdPath $DestCanonical -Force
 Copy-Item $SharkdPath $DestWrapper -Force
-Write-Host "Copied: $DestWrapper"
+Copy-Item $SharkdPath $DestLegacy -Force
 
-# List of DLLs that sharkd typically needs
-# These are the core Wireshark libraries
-$RequiredDlls = @(
-    "libwireshark.dll",
-    "libwiretap.dll",
-    "libwsutil.dll",
-    "libglib-2.0-0.dll",
-    "libgmodule-2.0-0.dll",
-    "libpcre2-8-0.dll",
-    "libintl-8.dll",
-    "libgcc_s_seh-1.dll",
-    "libwinpthread-1.dll",
-    "libzstd.dll",
-    "libspeexdsp-1.dll",
-    "libsmi-2.dll",
-    "libsnappy.dll",
-    "liblz4.dll",
-    "liblzma-5.dll",
-    "libopus-0.dll",
-    "libsbc-1.dll",
-    "libspandsp-2.dll",
-    "libbrotlidec.dll",
-    "libbrotlicommon.dll",
-    "libcares-2.dll",
-    "libgcrypt-20.dll",
-    "libgpg-error-0.dll",
-    "libgnutls-30.dll",
-    "libhogweed-6.dll",
-    "libnettle-8.dll",
-    "libgmp-10.dll",
-    "libiconv-2.dll",
-    "libp11-kit-0.dll",
-    "libffi-8.dll",
-    "libtasn1-6.dll",
-    "libnghttp2-14.dll",
-    "libssh.dll",
-    "libxml2-2.dll",
-    "zlib1.dll"
-)
+Write-Host "Copied binaries:"
+Write-Host "  $DestCanonical"
+Write-Host "  $DestWrapper"
+Write-Host "  $DestLegacy"
 
-Write-Host ""
-Write-Host "Copying DLL dependencies..."
-$CopiedCount = 0
-$MissingDlls = @()
-
-# On Windows, DLLs must be in the same directory as the executable
-# Copy them to OutputDir (same as sharkd.exe), not a subdirectory
-foreach ($dll in $RequiredDlls) {
-    $dllPath = Join-Path $WiresharkDir $dll
-    if (Test-Path $dllPath) {
-        Copy-Item $dllPath $OutputDir -Force
-        $CopiedCount++
-    } else {
-        $MissingDlls += $dll
-    }
+$ObjdumpPath = Get-ObjdumpPath
+if ($ObjdumpPath) {
+    Write-Host "Using objdump: $ObjdumpPath"
+} else {
+    Write-Host "objdump not found; falling back to broad DLL copy"
 }
 
-# Also copy any other DLLs in the Wireshark directory (catch-all)
-$AllDlls = Get-ChildItem -Path $WiresharkDir -Filter "*.dll" -ErrorAction SilentlyContinue
-foreach ($dll in $AllDlls) {
-    $destPath = Join-Path $OutputDir $dll.Name
-    if (-not (Test-Path $destPath)) {
-        Copy-Item $dll.FullName $destPath -Force
-        $CopiedCount++
+$CopiedDlls = New-Object System.Collections.Generic.HashSet[string]
+$MissingDlls = New-Object System.Collections.Generic.HashSet[string]
+
+$InitialDlls = Get-ImportedDlls -BinaryPath $DestCanonical -ObjdumpPath $ObjdumpPath
+
+if ($InitialDlls.Count -gt 0) {
+    $Queue = New-Object System.Collections.Generic.Queue[string]
+    foreach ($dll in $InitialDlls) {
+        if (-not (Is-SystemDll $dll)) {
+            $Queue.Enqueue($dll)
+        }
+    }
+
+    while ($Queue.Count -gt 0) {
+        $dll = $Queue.Dequeue()
+        if ($CopiedDlls.Contains($dll)) {
+            continue
+        }
+
+        $dep = Find-Dependency -DllName $dll -SearchDirs $SearchDirs
+        if (-not $dep) {
+            $MissingDlls.Add($dll) | Out-Null
+            continue
+        }
+
+        $destPath = Join-Path $OutputDir $dep.DestName
+        Copy-Item $dep.Source $destPath -Force
+        $CopiedDlls.Add($dll) | Out-Null
+
+        foreach ($child in (Get-ImportedDlls -BinaryPath $destPath -ObjdumpPath $ObjdumpPath)) {
+            if (-not (Is-SystemDll $child) -and -not $CopiedDlls.Contains($child)) {
+                $Queue.Enqueue($child)
+            }
+        }
+    }
+
+    foreach ($dll in $InitialDlls) {
+        if ((-not (Is-SystemDll $dll)) -and (-not (Test-Path (Join-Path $OutputDir $dll)))) {
+            $MissingDlls.Add($dll) | Out-Null
+        }
+    }
+} else {
+    # Fallback: copy all Wireshark DLLs when import inspection is unavailable.
+    Get-ChildItem -Path $WiresharkDir -Filter "*.dll" -ErrorAction SilentlyContinue | ForEach-Object {
+        Copy-Item $_.FullName (Join-Path $OutputDir $_.Name) -Force
+        $CopiedDlls.Add($_.Name) | Out-Null
     }
 }
-
-Write-Host "Copied $CopiedCount DLLs to $OutputDir (same directory as sharkd.exe)"
 
 if ($MissingDlls.Count -gt 0) {
     Write-Host ""
-    Write-Host "Note: Some expected DLLs were not found (may not be needed):"
-    $MissingDlls | ForEach-Object { Write-Host "  - $_" }
+    Write-Host "Missing required DLLs:" -ForegroundColor Red
+    foreach ($dll in $MissingDlls) {
+        Write-Host "  - $dll"
+    }
+    Write-Error "Windows sharkd bundle is incomplete."
+    exit 1
 }
 
-# Calculate total size
+# Keep placeholder folder used by cross-platform resource config.
+$Placeholder = Join-Path $LibsDir ".gitkeep"
+if (-not (Test-Path $Placeholder)) {
+    New-Item -ItemType File -Force -Path $Placeholder | Out-Null
+}
+
+Write-Host ""
+Write-Host "Bundle complete."
+Write-Host "Copied DLL count: $($CopiedDlls.Count)"
+
 $TotalSize = 0
 Get-ChildItem -Path $OutputDir -Recurse | ForEach-Object { $TotalSize += $_.Length }
 $TotalSizeMB = [math]::Round($TotalSize / 1MB, 2)
+Write-Host "Total bundle size: $TotalSizeMB MB"
 
 Write-Host ""
-Write-Host "Bundle complete!"
-Write-Host "  sharkd binary: $DestSharkd"
-Write-Host "  Dependencies:  $OutputDir\"
-Write-Host "  Total size:    $TotalSizeMB MB"
+Write-Host "=== Bundled files ==="
+Get-ChildItem $OutputDir | ForEach-Object { Write-Host $_.Name }
