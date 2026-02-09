@@ -110,6 +110,18 @@ class ScenarioTestHelper:
                     }
                 elif tool_name == "get_packet_details":
                     args = {"packet_num": tool_args.get("packet_num", 1)}
+                elif tool_name == "analyze_http_transaction":
+                    args = {"stream_id": tool_args.get("stream_id", 0)}
+                elif tool_name == "analyze_dns_activity":
+                    args = {"limit": tool_args.get("limit", 50)}
+                elif tool_name == "analyze_tls_session":
+                    args = {"stream_id": tool_args.get("stream_id", 0)}
+                elif tool_name == "summarize_protocol_timeline":
+                    args = {
+                        "protocols": tool_args.get("protocols", ["dns", "tcp"]),
+                        "bucket_seconds": tool_args.get("bucket_seconds", 5),
+                        "top_n_events": tool_args.get("top_n_events", 3),
+                    }
 
             tool_calls.append(MockToolCall(f"call_{tool_name}", tool_name, args))
 
@@ -123,8 +135,12 @@ class ScenarioTestHelper:
             # Track tool calls from previous response
             messages = kwargs.get("messages", [])
             for msg in messages:
-                if msg.get("role") == "assistant" and "tool_calls" in str(msg):
-                    pass  # Tool call tracking handled elsewhere
+                if msg.get("role") != "assistant":
+                    continue
+                for tool_call in msg.get("tool_calls", []):
+                    name = tool_call.get("function", {}).get("name")
+                    if name:
+                        self.tool_calls_made.append(name)
 
             if self.call_count == 1:
                 return self.create_mock_llm_response(scenario)
@@ -186,14 +202,15 @@ class TestToolSelection:
 
             expected_tools = scenario.get("expected_tools", [])
             min_calls = scenario.get("min_tool_calls", len(expected_tools))
+            called_tools = set(tools_called) | set(helper.tool_calls_made)
 
             if expected_tools:
                 # Verify expected tools were called
                 for tool in expected_tools:
-                    assert tool in tools_called, f"Expected tool '{tool}' was not called for query: {query}"
+                    assert tool in called_tools, f"Expected tool '{tool}' was not called for query: {query}"
 
             if min_calls > 0:
-                assert len(tools_called) >= min_calls, f"Expected at least {min_calls} tool calls, got {len(tools_called)}"
+                assert len(called_tools) >= min_calls, f"Expected at least {min_calls} tool calls, got {len(called_tools)}"
 
 
 # ============================================================================

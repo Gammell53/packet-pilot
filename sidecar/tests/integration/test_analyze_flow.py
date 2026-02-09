@@ -265,6 +265,144 @@ class TestToolCallLoop:
 
 
 # ============================================================================
+# Test Protocol-Aware Tool Calls
+# ============================================================================
+
+class TestProtocolAwareToolCalls:
+    """Test end-to-end loop behavior for protocol-aware tools."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_http_transaction_tool_call(self):
+        """LLM-driven HTTP transaction tool call should execute and recover final response."""
+        call_count = 0
+
+        def mock_create(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return MockLLMResponse(
+                    content="",
+                    tool_calls=[MockToolCall("call_http_1", "analyze_http_transaction", {"stream_id": 0})],
+                ).to_openai_format()
+            return FINAL_ANSWER_AFTER_TOOLS.to_openai_format()
+
+        mock_client = create_mock_client(side_effect=mock_create)
+        context = create_test_context()
+
+        with patch("packet_pilot_ai.services.ai_agent.get_stream", new_callable=AsyncMock) as mock_stream, \
+             patch("packet_pilot_ai.services.ai_agent.get_openrouter_client", return_value=mock_client):
+            mock_stream.return_value = HTTP_STREAM
+
+            result = await analyze_packets("Summarize HTTP transaction stream 0", context, {}, [])
+
+            assert result is not None
+            assert call_count == 2
+            mock_stream.assert_called_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_dns_activity_tool_call(self):
+        """LLM-driven DNS activity tool call should execute via search_packets."""
+        call_count = 0
+
+        def mock_create(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return MockLLMResponse(
+                    content="",
+                    tool_calls=[MockToolCall("call_dns_1", "analyze_dns_activity", {"limit": 20})],
+                ).to_openai_format()
+            return FINAL_ANSWER_AFTER_TOOLS.to_openai_format()
+
+        mock_client = create_mock_client(side_effect=mock_create)
+        context = create_test_context()
+
+        with patch("packet_pilot_ai.services.ai_agent.search_packets", new_callable=AsyncMock) as mock_search, \
+             patch("packet_pilot_ai.services.ai_agent.get_openrouter_client", return_value=mock_client):
+            mock_search.return_value = {"frames": DNS_TRAFFIC_FRAMES, "total_matching": 2, "filter_applied": "dns"}
+
+            result = await analyze_packets("Analyze DNS behavior", context, {}, [])
+
+            assert result is not None
+            assert call_count == 2
+            mock_search.assert_called_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_tls_session_tool_call(self):
+        """LLM-driven TLS session tool call should execute session and alert searches."""
+        call_count = 0
+
+        def mock_create(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return MockLLMResponse(
+                    content="",
+                    tool_calls=[MockToolCall("call_tls_1", "analyze_tls_session", {"stream_id": 0})],
+                ).to_openai_format()
+            return FINAL_ANSWER_AFTER_TOOLS.to_openai_format()
+
+        mock_client = create_mock_client(side_effect=mock_create)
+        context = create_test_context()
+
+        with patch("packet_pilot_ai.services.ai_agent.search_packets", new_callable=AsyncMock) as mock_search, \
+             patch("packet_pilot_ai.services.ai_agent.get_frame_details", new_callable=AsyncMock) as mock_details, \
+             patch("packet_pilot_ai.services.ai_agent.get_openrouter_client", return_value=mock_client):
+            mock_search.side_effect = [
+                {"frames": [{"number": 5, "info": "TLSv1.2 Client Hello"}], "total_matching": 1},
+                {"frames": [], "total_matching": 0},
+            ]
+            mock_details.return_value = {"tree": [{"l": "Server Name: example.com"}]}
+
+            result = await analyze_packets("Inspect TLS stream 0", context, {}, [])
+
+            assert result is not None
+            assert call_count == 2
+            assert mock_search.call_count == 2
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_protocol_timeline_tool_call(self):
+        """LLM-driven protocol timeline tool call should run multiple protocol searches."""
+        call_count = 0
+
+        def mock_create(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return MockLLMResponse(
+                    content="",
+                    tool_calls=[
+                        MockToolCall(
+                            "call_timeline_1",
+                            "summarize_protocol_timeline",
+                            {"protocols": ["dns", "tcp"], "bucket_seconds": 5, "top_n_events": 2},
+                        )
+                    ],
+                ).to_openai_format()
+            return FINAL_ANSWER_AFTER_TOOLS.to_openai_format()
+
+        mock_client = create_mock_client(side_effect=mock_create)
+        context = create_test_context()
+
+        with patch("packet_pilot_ai.services.ai_agent.search_packets", new_callable=AsyncMock) as mock_search, \
+             patch("packet_pilot_ai.services.ai_agent.get_openrouter_client", return_value=mock_client):
+            mock_search.side_effect = [
+                {"frames": [{"number": 1, "time": "1.0", "info": "dns"}], "total_matching": 1},
+                {"frames": [{"number": 2, "time": "2.0", "info": "tcp"}], "total_matching": 1},
+            ]
+
+            result = await analyze_packets("Summarize protocol timeline", context, {}, [])
+
+            assert result is not None
+            assert call_count == 2
+            assert mock_search.call_count == 2
+
+
+# ============================================================================
 # Test Error Recovery
 # ============================================================================
 

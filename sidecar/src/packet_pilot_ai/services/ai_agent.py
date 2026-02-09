@@ -32,6 +32,7 @@ from .ai_tools import (
     TOOL_SCHEMAS,
     TOOL_NUMERIC_BOUNDS,
     TOOL_GUARDRAIL_PHRASES,
+    TOOL_EXACTLY_ONE_OF,
 )
 from .ai_tool_handlers import build_tool_executors, ToolRuntime
 
@@ -184,6 +185,8 @@ def _validate_tool_arguments(name: str, arguments: Any) -> str | None:
         expected_type = properties.get(key, {}).get("type")
         if expected_type == "integer" and (not isinstance(value, int) or isinstance(value, bool)):
             return f"Argument '{key}' must be an integer"
+        if expected_type == "boolean" and not isinstance(value, bool):
+            return f"Argument '{key}' must be a boolean"
         if expected_type == "string" and not isinstance(value, str):
             return f"Argument '{key}' must be a string"
         if expected_type == "array" and not isinstance(value, list):
@@ -206,6 +209,12 @@ def _validate_tool_arguments(name: str, arguments: Any) -> str | None:
             return f"Argument '{key}' must be >= {min_value}"
         if max_value is not None and value > max_value:
             return f"Argument '{key}' must be <= {max_value}"
+
+    exactly_one_of = TOOL_EXACTLY_ONE_OF.get(name)
+    if exactly_one_of:
+        present = [field for field in exactly_one_of if field in arguments]
+        if len(present) != 1:
+            return f"Exactly one of {', '.join(exactly_one_of)} must be provided"
 
     return None
 
@@ -359,7 +368,13 @@ When analyzing a capture, explore progressively - start broad, then drill down:
    - get_stream: See actual data exchanged in a conversation
    - get_packet_details: Examine one packet in full detail
 
-3. **Investigate Issues**:
+3. **Protocol-Aware Analysis** (prefer these for protocol-specific questions):
+   - analyze_http_transaction: Summarize request/response exchanges
+   - analyze_dns_activity: Understand DNS query/error behavior
+   - analyze_tls_session: Inspect TLS version, alerts, SNI/cert hints
+   - summarize_protocol_timeline: Find spikes and shifts over time
+
+4. **Investigate Issues**:
    - find_anomalies: Quick health check for problems
    - get_packet_context: Understand what happened around an event
    - compare_packets: Find differences between related packets
@@ -375,6 +390,12 @@ When analyzing a capture, explore progressively - start broad, then drill down:
 - search_packets(filter, limit): Find packets with Wireshark filters
 - get_stream(stream_id, protocol): Reconstruct conversation content
 - get_packet_details(packet_num): Full protocol dissection
+
+**Protocol-Aware Tools** - Prefer for protocol-focused questions:
+- analyze_http_transaction(stream_id|request_frame, include_body_preview): HTTP request/response summary
+- analyze_dns_activity(query_contains, rr_type, rcode_only, limit): DNS behavior and error profile
+- analyze_tls_session(stream_id, include_cert_subjects): TLS handshake/session diagnostics
+- summarize_protocol_timeline(protocols, bucket_seconds, top_n_events): Time-bucketed protocol activity
 
 **Analysis Tools**:
 - find_anomalies(types): Detect retransmissions, errors, resets

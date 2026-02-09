@@ -87,3 +87,38 @@ scenarios:
     expected_tools: []
     expected_response_contains:
       - "packet"
+
+  # Protocol-aware scenarios
+  - name: http_transaction_summary
+    query: "Summarize the HTTP transaction in stream 0"
+    expected_tools:
+      - analyze_http_transaction
+    expected_tool_args:
+      analyze_http_transaction:
+        stream_id: 0
+
+  - name: dns_behavior_overview
+    query: "Analyze DNS activity and error behavior"
+    expected_tools:
+      - analyze_dns_activity
+    expected_tool_args:
+      analyze_dns_activity:
+        limit: 50
+
+  - name: tls_session_diagnostics
+    query: "Inspect TLS session details for stream 0"
+    expected_tools:
+      - analyze_tls_session
+    expected_tool_args:
+      analyze_tls_session:
+        stream_id: 0
+
+  - name: protocol_timeline_summary
+    query: "Give me a timeline of DNS and TCP activity"
+    expected_tools:
+      - summarize_protocol_timeline
+    expected_tool_args:
+      summarize_protocol_timeline:
+        protocols: ["dns", "tcp"]
+        bucket_seconds: 5
+        top_n_events: 3
