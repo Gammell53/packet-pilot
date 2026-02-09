@@ -140,8 +140,8 @@ class TestAnalyzeFlow:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_capture_stats_fetched_and_included(self):
-        """Test that capture stats are fetched and included in context."""
+    async def test_analyze_uses_fast_context_without_capture_stats_call(self):
+        """Analyze path should avoid slow capture-stats fetch for latency."""
         mock_client = create_mock_client(return_value=SIMPLE_TEXT_RESPONSE.to_openai_format())
         context = create_test_context()
 
@@ -152,9 +152,9 @@ class TestAnalyzeFlow:
 
             await analyze_packets("Analyze this capture", context, {}, [])
 
-            mock_stats.assert_called_once()
+            mock_stats.assert_not_called()
 
-            # Verify stats were included in system prompt
+            # Verify request still includes a system message
             call_args = mock_client.chat.completions.create.call_args
             messages = call_args.kwargs.get("messages", [])
             system_msg = next((m for m in messages if m["role"] == "system"), None)
@@ -321,3 +321,30 @@ class TestErrorRecovery:
             except Exception as e:
                 # Exception is acceptable - we're testing error handling
                 assert "timeout" in str(e).lower() or True
+
+
+class TestRetryBehavior:
+    """Test transient retry handling for LLM requests."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_call_llm_retries_after_transient_timeout(self):
+        """Timeout-like failures should retry and succeed when next attempt works."""
+        mock_client = create_mock_client(
+            side_effect=[
+                TimeoutError("temporary timeout"),
+                SIMPLE_TEXT_RESPONSE.to_openai_format(),
+            ]
+        )
+
+        with patch("packet_pilot_ai.services.ai_agent.get_openrouter_client", return_value=mock_client), \
+             patch("packet_pilot_ai.services.ai_agent.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            text = await call_llm(
+                [{"role": "user", "content": "hello"}],
+                "You are a test system prompt.",
+                use_tools=False,
+            )
+
+            assert "capture" in text.lower()
+            assert mock_client.chat.completions.create.call_count == 2
+            mock_sleep.assert_called_once()
