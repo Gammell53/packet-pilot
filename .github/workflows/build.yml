@@ -191,7 +191,7 @@ jobs:
             throw "objdump not found at $Objdump"
           }
 
-          $SystemDllRegex = '^(api-ms-win-|KERNEL32\\.dll$|WS2_32\\.dll$|UCRTBASE\\.dll$|VCRUNTIME140(_1)?\\.dll$|MSVCP140\\.dll$)'
+          $SystemDllRegex = '^(api-ms-win-|KERNEL32\\.dll$|ADVAPI32\\.dll$|IPHLPAPI\\.dll$|SHELL32\\.dll$|USER32\\.dll$|OLE32\\.dll$|OLEAUT32\\.dll$|SECUR32\\.dll$|CRYPT32\\.dll$|BCRYPT\\.dll$|WS2_32\\.dll$|WSOCK32\\.dll$|NTDLL\\.dll$|UCRTBASE\\.dll$|VCRUNTIME140(_1)?\\.dll$|MSVCP140\\.dll$)'
           $Imports = & $Objdump -p $Sharkd 2>$null |
             Select-String -Pattern '^\\s*DLL Name:\\s+(.+)$' |
             ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() } |
