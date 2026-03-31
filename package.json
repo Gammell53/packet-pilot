@@ -30,7 +30,7 @@
     "corpus:list": "node scripts/public-pcap-corpus.cjs list",
     "corpus:sync": "node scripts/public-pcap-corpus.cjs sync",
     "corpus:open": "node scripts/public-pcap-corpus.cjs open",
-    "test:ai-harness": "npm run build:main && node --test scripts/tests/*.test.cjs",
+    "test:ai-harness": "npm run build:main && node scripts/run-tests.cjs",
     "test:ai-harness:live": "npm run build:main && node scripts/run-ai-harness-live.cjs",
     "test:e2e": "playwright test --config e2e/playwright.config.ts",
     "test:e2e:ui": "playwright test --config e2e/playwright.config.ts --ui",
