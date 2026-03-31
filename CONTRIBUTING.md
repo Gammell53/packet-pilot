@@ -9,8 +9,6 @@ Thank you for your interest in contributing to PacketPilot.
 - **Node.js** 18+
 - **Wireshark** with `sharkd` available on your PATH, or bundled under `resources/sharkd/`
 - **Python** 3.11+ if you plan to work on `sidecar/**`
-- **Rust** only if you are explicitly working in the archived `src-tauri/**` migration surface
-
 ### Development Setup
 
 1. Clone the repository:
@@ -75,8 +73,6 @@ Thank you for your interest in contributing to PacketPilot.
    source .venv/bin/activate
    pytest tests/ -v
 
-   # Archived Tauri migration forensics only
-   cargo check --manifest-path src-tauri/Cargo.toml
    ```
 
 5. Commit with a clear message.
@@ -96,10 +92,6 @@ Thank you for your interest in contributing to PacketPilot.
 - Use type hints.
 - Keep tests close to sidecar behavior changes.
 
-**Archived Rust / Tauri:**
-
-- Treat `src-tauri/**` as an archived migration surface unless a task explicitly targets it.
-
 ## Project Structure
 
 ```text
@@ -108,8 +100,7 @@ packet-pilot/
 |- resources/                # Icons and bundled sharkd assets
 |- shared/                   # Typed contracts shared across processes
 |- src/                      # React frontend
-|- sidecar/                  # Legacy Python sidecar surfaces
-|- src-tauri/                # Archived Tauri implementation
+|- sidecar/                  # Python FastAPI AI sidecar
 `- scripts/                  # Build and verification utilities
 ```
 

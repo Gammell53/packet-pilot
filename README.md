@@ -66,8 +66,6 @@ See `resources/sharkd/README.md` for details on obtaining sharkd binaries.
 
 ### Platform Notes
 
-Electron does not require the old Tauri/WebView system packages for local development.
-
 - **Linux**: install Node.js and Wireshark/`sharkd`, then use `npm install` and `npm run dev`.
 - **macOS**: install Node.js and Wireshark/`sharkd`, then use `npm install` and `npm run dev`.
 - **Windows**: install Node.js and Wireshark, then use `npm install` and `npm run dev`.
@@ -194,9 +192,9 @@ If the problem persists, open Settings and use `Copy Diagnostics`, or copy the d
         ┌───────────────────┼───────────────────┐
         ▼                   ▼                   ▼
 ┌────────────────┐  ┌────────────────────┐  ┌──────────────┐
-│ Electron Main  │  │ OpenRouter Agent   │  │   sharkd     │
-│ (Node runtime) │◄─┤ (JavaScript SDK)   │  │  (Wireshark) │
-│                │  │                    │  │              │
+│ Electron Main  │  │   AI Providers     │  │   sharkd     │
+│ (Node runtime) │◄─┤ OpenRouter/Claude/  │  │  (Wireshark) │
+│                │  │ ChatGPT            │  │              │
 │ - File dialogs │  │ - Tool calling     │  │ - Dissector  │
 │ - Settings     │  │ - Streaming        │  │ - Filters    │
 │ - sharkd IPC   │  │ - Conversation     │  │ - Statistics │
@@ -211,12 +209,13 @@ packet-pilot/
 │   └── services/           # sharkd runtime + OpenRouter agent harness
 ├── resources/              # Electron icons and bundled sharkd assets
 ├── shared/                 # Typed contracts shared by renderer and main
+├── sidecar/                # Python FastAPI AI sidecar
+│   └── src/                # Multi-provider AI service
 ├── src/                    # React frontend
 │   ├── components/         # UI components
 │   │   ├── PacketGrid/     # Virtualized packet table
 │   │   └── AiChat/         # AI chat panel
 │   └── App.tsx             # Main application
-├── src-tauri/              # Archived Tauri implementation
 └── package.json
 ```
 
