@@ -661,7 +661,7 @@ class SharkdService extends EventEmitter {
 
   private isInfoMessage(message: string): boolean {
     // sharkd 4.x writes informational diagnostics to stderr that are not errors
-    return /^(Hello in child\.|load: filename=|Running as user)/.test(message);
+    return /^(Hello in child\.|load: filename=|Running as user|sharkd_session_process_tap\(\))/.test(message);
   }
 
   private buildIssueDetail(binaryPath: string | null, error?: unknown): string {
