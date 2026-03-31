@@ -108,9 +108,13 @@ pub struct SidecarStatus {
 /// Find a Python executable to use (prefers venv)
 fn find_python(sidecar_path: &std::path::Path) -> Result<String, String> {
     // First try the venv Python in the sidecar directory
-    let venv_python = sidecar_path
-        .parent()
-        .map(|p| p.join(".venv").join("bin").join("python"));
+    let venv_python = sidecar_path.parent().map(|p| {
+        if cfg!(target_os = "windows") {
+            p.join(".venv").join("Scripts").join("python.exe")
+        } else {
+            p.join(".venv").join("bin").join("python")
+        }
+    });
 
     if let Some(venv_path) = venv_python {
         if venv_path.exists() {
@@ -119,8 +123,9 @@ fn find_python(sidecar_path: &std::path::Path) -> Result<String, String> {
     }
 
     // Fall back to system Python
+    let finder = if cfg!(target_os = "windows") { "where" } else { "which" };
     for cmd in ["python3", "python"] {
-        let result = Command::new("which").arg(cmd).output();
+        let result = Command::new(finder).arg(cmd).output();
         if let Ok(output) = result {
             if output.status.success() {
                 return Ok(cmd.to_string());
