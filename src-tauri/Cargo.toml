@@ -25,4 +25,8 @@ axum = "0.7"
 tower-http = { version = "0.5", features = ["cors"] }
 tauri-plugin-store = "2"
 base64 = "0.22"
+getrandom = "0.2"
+open = "5"
+sha2 = "0.10"
+libc = "0.2"
 

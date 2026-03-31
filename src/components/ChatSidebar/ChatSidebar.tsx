@@ -1,48 +1,41 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import { ChatMessage } from "./ChatMessage";
 import { ChatInput } from "./ChatInput";
+import { ProviderSetup } from "./ProviderSetup";
 import { useChat } from "../../hooks/useChat";
-import { usePythonSidecar } from "../../hooks/usePythonSidecar";
+import { useAiRuntime } from "../../hooks/useAiRuntime";
+import { useSettings } from "../../hooks/useSettings";
 import type { CaptureContext } from "../../types";
+import { getDefaultModel } from "../../constants/models";
 import "./ChatSidebar.css";
 
 function getErrorInfo(error: string): { message: string; hint: string } {
-  const errorLower = error.toLowerCase();
+  const value = error.toLowerCase();
 
-  if (errorLower.includes("python") || errorLower.includes("not found")) {
+  if (value.includes("429") || value.includes("quota") || value.includes("rate limit") || value.includes("rate-limit")) {
     return {
-      message: "Python environment issue",
-      hint: "Ensure Python is installed and accessible",
+      message: "OpenRouter quota exceeded",
+      hint: "Check your OpenRouter credits and model limits, then try again.",
     };
   }
-  if (errorLower.includes("port") || errorLower.includes("address already in use")) {
+
+  if (value.includes("api") || value.includes("key") || value.includes("401") || value.includes("unauthorized")) {
     return {
-      message: "Port conflict",
-      hint: "Another process is using port 8765. Try restarting the app.",
+      message: "OpenRouter key issue",
+      hint: "Check your OpenRouter API key in settings.",
     };
   }
-  if (errorLower.includes("timeout") || errorLower.includes("timed out")) {
+
+  if (value.includes("network") || value.includes("fetch") || value.includes("timeout")) {
     return {
-      message: "Startup timed out",
-      hint: "The AI service took too long to start. Try again.",
-    };
-  }
-  if (errorLower.includes("api") || errorLower.includes("key") || errorLower.includes("401") || errorLower.includes("unauthorized")) {
-    return {
-      message: "API key issue",
-      hint: "Check your OpenRouter API key in Settings",
-    };
-  }
-  if (errorLower.includes("network") || errorLower.includes("connection") || errorLower.includes("fetch")) {
-    return {
-      message: "Connection failed",
-      hint: "Check your internet connection",
+      message: "Request failed",
+      hint: "Check network connectivity and try again.",
     };
   }
 
   return {
-    message: "Failed to start",
-    hint: error.length > 80 ? error.slice(0, 80) + "..." : error,
+    message: "Failed to start AI runtime",
+    hint: error.length > 96 ? `${error.slice(0, 96)}...` : error,
   };
 }
 
@@ -56,10 +49,6 @@ interface ChatSidebarProps {
   totalFrames: number;
   onApplyFilter: (filter: string) => void;
   onGoToPacket: (packetNum: number) => void;
-  apiKey: string | null;
-  model: string;
-  hasApiKey: boolean;
-  onOpenSettings: () => void;
 }
 
 export function ChatSidebar({
@@ -72,25 +61,23 @@ export function ChatSidebar({
   totalFrames,
   onApplyFilter,
   onGoToPacket,
-  apiKey,
-  model,
-  hasApiKey,
-  onOpenSettings,
 }: ChatSidebarProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { status, start: startSidecar, isStarting } = usePythonSidecar();
+  const { status, runtimeDiagnostics, start, isStarting, refreshRuntimeDiagnostics } = useAiRuntime();
+  const { settings, availableModels, hasConfiguredAuth, updateApiKey, updateModel } = useSettings();
   const [sidebarWidth, setSidebarWidth] = useState(380);
+  const [showSetup, setShowSetup] = useState(false);
+  const [selectedModel, setSelectedModel] = useState(settings.model);
 
-  // Resize handler for draggable left edge
-  const handleResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    const startX = e.clientX;
+  const handleResizeStart = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+    const startX = event.clientX;
     const startWidth = sidebarWidth;
 
-    const onMouseMove = (e: MouseEvent) => {
-      const delta = startX - e.clientX;
-      const newWidth = Math.max(320, Math.min(800, startWidth + delta));
-      setSidebarWidth(newWidth);
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const delta = startX - moveEvent.clientX;
+      const nextWidth = Math.max(320, Math.min(800, startWidth + delta));
+      setSidebarWidth(nextWidth);
     };
 
     const onMouseUp = () => {
@@ -106,16 +93,26 @@ export function ChatSidebar({
     document.addEventListener("mouseup", onMouseUp);
   }, [sidebarWidth]);
 
-  // Auto-start sidecar when sidebar opens and API key exists
   useEffect(() => {
-    if (isOpen && hasApiKey && !status.is_running && !isStarting) {
-      startSidecar(apiKey, model);
+    if (isOpen && hasConfiguredAuth && !status.is_running && !isStarting) {
+      setShowSetup(false);
+      void start();
     }
-  }, [isOpen, hasApiKey, status.is_running, isStarting, apiKey, model, startSidecar]);
+  }, [hasConfiguredAuth, isOpen, isStarting, start, status.is_running]);
 
-  const handleStartSidecar = () => {
-    startSidecar(apiKey, model);
-  };
+  useEffect(() => {
+    setSelectedModel((currentModel) => {
+      if (availableModels.some((model) => model.id === currentModel)) {
+        return currentModel;
+      }
+
+      if (availableModels.some((model) => model.id === settings.model)) {
+        return settings.model;
+      }
+
+      return availableModels[0]?.id ?? getDefaultModel();
+    });
+  }, [availableModels, settings.model]);
 
   const context: CaptureContext = {
     selectedPacketId: selectedFrame,
@@ -126,23 +123,27 @@ export function ChatSidebar({
     totalFrames,
   };
 
-  const { messages, isLoading, sendMessage, clearHistory, regenerateLastResponse, stopGeneration } = useChat({ context, model });
+  const { messages, isLoading, sendMessage, clearHistory, regenerateLastResponse, stopGeneration } =
+    useChat({ context, selectedModel });
 
-  // Auto-scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Handle keyboard shortcuts
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isOpen) {
-        onClose();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && isOpen) {
+        if (showSetup) {
+          setShowSetup(false);
+        } else {
+          onClose();
+        }
       }
     };
+
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, showSetup]);
 
   const handleAction = (action: string, payload: unknown) => {
     if (action === "apply_filter" && typeof payload === "string") {
@@ -152,7 +153,31 @@ export function ChatSidebar({
     }
   };
 
+  const handleCopyDiagnostics = useCallback(async () => {
+    try {
+      const diagnostics = runtimeDiagnostics ?? (await refreshRuntimeDiagnostics());
+      if (!diagnostics) {
+        return;
+      }
+
+      await navigator.clipboard.writeText(JSON.stringify(diagnostics, null, 2));
+    } catch (error) {
+      console.error("Failed to copy runtime diagnostics:", error);
+    }
+  }, [refreshRuntimeDiagnostics, runtimeDiagnostics]);
+
+  const aiIssue = runtimeDiagnostics?.ai.lastIssue;
+
+  const handleModelChange = useCallback((nextModel: string) => {
+    setSelectedModel(nextModel);
+    void updateModel(nextModel).catch((error) => {
+      console.error("Failed to persist selected chat model:", error);
+    });
+  }, [updateModel]);
+
   if (!isOpen) return null;
+
+  const showProviderSetup = !hasConfiguredAuth || showSetup;
 
   return (
     <div className="chat-sidebar" style={{ width: sidebarWidth }}>
@@ -175,18 +200,23 @@ export function ChatSidebar({
                 : isStarting
                 ? "Starting..."
                 : status.error
-                ? "Error - click Settings to troubleshoot"
+                ? "Error"
                 : "AI assistant is offline"
             }
           />
           <h3>PacketPilot AI</h3>
         </div>
         <div className="chat-header-actions">
-          <button
-            className="icon-button"
-            onClick={clearHistory}
-            title="Clear chat"
-          >
+          {hasConfiguredAuth && (
+            <button
+              className="icon-button"
+              onClick={() => setShowSetup((v) => !v)}
+              title={showSetup ? "Back to chat" : "AI settings"}
+            >
+              {showSetup ? "Chat" : "Settings"}
+            </button>
+          )}
+          <button className="icon-button" onClick={clearHistory} title="Clear chat">
             Clear
           </button>
           <button className="icon-button" onClick={onClose} title="Close (Esc)">
@@ -195,41 +225,55 @@ export function ChatSidebar({
         </div>
       </div>
 
-      {!hasApiKey ? (
-        <div className="chat-sidecar-status">
-          <p>API key required</p>
-          <p className="hint">Configure your OpenRouter API key to use AI features.</p>
-          <button className="start-sidecar-btn" onClick={onOpenSettings}>
-            Configure API Key
-          </button>
-        </div>
+      {showProviderSetup ? (
+        <ProviderSetup
+          settings={settings}
+          onUpdateApiKey={updateApiKey}
+        />
       ) : !status.is_running ? (
-        <div className="chat-sidecar-status">
+        <div className="chat-runtime-status">
           {isStarting ? (
             <div className="starting-container">
               <div className="starting-spinner" />
               <p className="starting-title">Starting AI assistant</p>
-              <p className="starting-hint">This may take a few seconds...</p>
+              <p className="starting-hint">Loading AI runtime...</p>
             </div>
           ) : (
             <>
               <p>AI assistant is not running</p>
-              <button
-                className="start-sidecar-btn"
-                onClick={handleStartSidecar}
-              >
+              <button className="runtime-action-button" onClick={() => void start()}>
                 Start AI Assistant
               </button>
             </>
           )}
+
           {status.error && (
             <div className="error-box">
               <p className="error-title">{getErrorInfo(status.error).message}</p>
               <p className="error-hint">{getErrorInfo(status.error).hint}</p>
+              {aiIssue && (
+                <details className="runtime-details">
+                  <summary>Runtime diagnostics</summary>
+                  <pre className="runtime-details-body">
+                    {JSON.stringify(
+                      {
+                        issue: aiIssue,
+                        ai: runtimeDiagnostics?.ai,
+                      },
+                      null,
+                      2,
+                    )}
+                  </pre>
+                </details>
+              )}
+              <button className="settings-link diagnostics-link" onClick={() => void handleCopyDiagnostics()}>
+                Copy diagnostics
+              </button>
             </div>
           )}
-          <button className="settings-link" onClick={onOpenSettings}>
-            Settings
+
+          <button className="settings-link" onClick={() => setShowSetup(true)}>
+            OpenRouter settings
           </button>
         </div>
       ) : (
@@ -238,30 +282,28 @@ export function ChatSidebar({
             {selectedFrame && <span>Packet #{selectedFrame}</span>}
             {currentFilter && <span>Filter: {currentFilter}</span>}
             {!selectedFrame && !currentFilter && (
-              <span>
-                {fileName ? `${totalFrames} packets` : "No capture loaded"}
-              </span>
+              <span>{fileName ? `${totalFrames} packets` : "No capture loaded"}</span>
             )}
           </div>
 
           <div className="chat-messages">
             {messages.length === 0 && (
               <div className="chat-empty">
-                <p>Ask me about your packet capture!</p>
+                <p>Ask me about your packet capture.</p>
                 <p className="hint">Try: "Show me all HTTP requests"</p>
-                <p className="hint">Or: "What's happening in packet #42?"</p>
+                <p className="hint">Or: "What stands out in this capture?"</p>
               </div>
             )}
-            {messages.map((msg, index) => {
-              // Check if this is the last assistant message
+
+            {messages.map((message, index) => {
               const isLatestAssistant =
-                msg.role === "assistant" &&
-                index === messages.findLastIndex((m) => m.role === "assistant");
+                message.role === "assistant" &&
+                index === messages.findLastIndex((entry) => entry.role === "assistant");
 
               return (
                 <ChatMessage
-                  key={msg.id}
-                  message={msg}
+                  key={message.id}
+                  message={message}
                   onAction={handleAction}
                   onRegenerate={regenerateLastResponse}
                   isLatestAssistant={isLatestAssistant}
@@ -269,6 +311,25 @@ export function ChatSidebar({
               );
             })}
             <div ref={messagesEndRef} />
+          </div>
+
+          <div className="chat-model-toolbar">
+            <div className="chat-model-toolbar-copy">
+              <span className="chat-model-toolbar-label">Chat model</span>
+              <span className="chat-model-toolbar-hint">Changes apply to the next message</span>
+            </div>
+            <div className="chat-model-toolbar-control">
+              <select
+                value={selectedModel}
+                onChange={(event) => handleModelChange(event.target.value)}
+              >
+                {availableModels.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <ChatInput

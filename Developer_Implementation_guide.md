@@ -1,6 +1,8 @@
 This is a comprehensive **Developer Implementation Guide**. It breaks down the "PacketPilot" project into actionable engineering phases with specific coding tasks.
 
-These plans assume you are using the **Tauri + React + Python** stack we defined.
+Archived note: this guide was written for the original **Tauri + React + Python** plan.
+
+The active desktop runtime has since moved to Electron. Treat the rest of this file as migration history, and use `README.md`, `CONTRIBUTING.md`, `electron/`, and `shared/` for the current implementation path.
 
 ---
 

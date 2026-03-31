@@ -5,7 +5,7 @@
 [![Build Status](https://github.com/Gammell53/packet-pilot/actions/workflows/build.yml/badge.svg)](https://github.com/Gammell53/packet-pilot/actions/workflows/build.yml)
 [![Release](https://img.shields.io/github/v/release/Gammell53/packet-pilot?include_prereleases)](https://github.com/Gammell53/packet-pilot/releases)
 [![License](https://img.shields.io/github/license/Gammell53/packet-pilot)](LICENSE)
-[![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri-blue?logo=tauri)](https://tauri.app)
+[![Built with Electron](https://img.shields.io/badge/Built%20with-Electron-47848F?logo=electron)](https://www.electronjs.org/)
 
 > *"Show me all failed TLS handshakes"* → PacketPilot finds them.
 
@@ -26,7 +26,7 @@ Wireshark is powerful, but its filter syntax is arcane. PacketPilot lets you **a
 
 ### ⚡ High Performance
 - **Virtualized packet grid** — Handles 100k+ packets without lag
-- **Native desktop app** — Rust backend, not Electron bloat
+- **Desktop runtime** — Electron shell with Node-managed `sharkd`
 - **Wireshark-compatible** — Uses `sharkd` for real protocol dissection
 
 ### 🔍 Full Analysis Toolkit
@@ -37,7 +37,7 @@ Wireshark is powerful, but its filter syntax is arcane. PacketPilot lets you **a
 - Stream reconstruction
 
 ### 💻 Cross-Platform
-- Linux, macOS, and Windows
+- Linux and Windows via CI, with macOS assets supported for manual packaging
 
 ## Prerequisites
 
@@ -51,12 +51,9 @@ Wireshark is powerful, but its filter syntax is arcane. PacketPilot lets you **a
 2. **Node.js** - Version 18 or later
    - Download from [nodejs.org](https://nodejs.org/)
 
-3. **Rust** - Latest stable version
-   - Install via [rustup](https://rustup.rs/): `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
-
 ### For Distribution (Bundled sharkd)
 
-For production builds, sharkd can be bundled as a sidecar binary. Place platform-specific binaries in `src-tauri/binaries/`:
+For production builds, sharkd can be bundled with the Electron app. Place platform-specific binaries in `resources/sharkd/`:
 
 | Platform | Filename |
 |----------|----------|
@@ -65,42 +62,18 @@ For production builds, sharkd can be bundled as a sidecar binary. Place platform
 | macOS ARM | `sharkd-aarch64-apple-darwin` |
 | Windows | `sharkd-x86_64-pc-windows-msvc.exe` |
 
-See `src-tauri/binaries/README.md` for details on obtaining sharkd binaries.
+See `resources/sharkd/README.md` for details on obtaining sharkd binaries.
 
-### Linux (Debian/Ubuntu)
+### Platform Notes
 
-Install the required system dependencies:
+Electron does not require the old Tauri/WebView system packages for local development.
 
-```bash
-sudo apt update
-sudo apt install -y \
-  libwebkit2gtk-4.1-dev \
-  build-essential \
-  curl \
-  wget \
-  file \
-  libssl-dev \
-  libgtk-3-dev \
-  libayatana-appindicator3-dev \
-  librsvg2-dev \
-  libglib2.0-dev \
-  libcairo2-dev \
-  libpango1.0-dev \
-  libatk1.0-dev \
-  libsoup-3.0-dev \
-  libjavascriptcoregtk-4.1-dev
-```
+- **Linux**: install Node.js and Wireshark/`sharkd`, then use `npm install` and `npm run dev`.
+- **macOS**: install Node.js and Wireshark/`sharkd`, then use `npm install` and `npm run dev`.
+- **Windows**: install Node.js and Wireshark, then use `npm install` and `npm run dev`.
 
-### macOS
-
-```bash
-xcode-select --install
-```
-
-### Windows
-
-- Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with "Desktop development with C++"
-- Install [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)
+For packaged releases, use the Electron build flow in `package.json` (`npm run dist` or `npm run dist:win`) and bundle `sharkd` assets under `resources/sharkd/`.
+The current CI release workflow publishes Linux and Windows artifacts; macOS packaging is still a manual path.
 
 ## Installation
 
@@ -113,19 +86,69 @@ cd packet-pilot
 npm install
 
 # Run in development mode
-npm run tauri dev
+npm run dev
 ```
 
 For Windows releases, use the NSIS `.exe` installer by default. The `.msi` package is primarily intended for managed/enterprise deployment.
+
+## Multi-Agent Development
+
+PacketPilot supports structured multi-agent development with Codex via `claw-connect`.
+
+- Operating model and guardrails: `AGENTS.md`
+- Copy/paste message and task templates: `docs/agent-templates.md`
+- Environment bootstrap checks: `scripts/agents/check-env.sh`
 
 ## Building
 
 ```bash
 # Build for production
-npm run tauri build
+npm run dist
 ```
 
-The compiled application will be in `src-tauri/target/release/`.
+Packaged applications will be emitted under `dist/` and the Electron builder output directory.
+
+### Packaged Smoke Test
+
+After producing an unpacked build, run the packaged smoke harness:
+
+```bash
+npm run smoke:packaged
+```
+
+To verify capture loading and filter/detail flows against a real file:
+
+```bash
+npm run smoke:packaged -- --capture /path/to/sample.pcapng
+```
+
+To require AI startup as part of the smoke pass:
+
+```bash
+npm run smoke:packaged -- --capture /path/to/sample.pcapng --require-ai
+```
+
+## Public PCAP Corpus
+
+PacketPilot includes a download-on-demand public capture corpus for manual chat sessions and live harness runs. Downloads are cached under `test-results/public-pcaps/` and are ignored by git.
+
+```bash
+# Show the corpus and local cache status
+npm run corpus:list
+
+# Download all public samples
+npm run corpus:sync
+
+# Download one sample and launch the dev app with it preloaded
+npm run corpus:open -- --id dns-lookups
+```
+
+You can also benchmark those captures through the live AI harness:
+
+```bash
+OPENROUTER_API_KEY=... npm run test:ai-harness:live -- --suite public-pcaps --scenario dns-lookups --driver direct --model google/gemini-3.1-flash-lite-preview
+OPENROUTER_API_KEY=... npm run test:ai-harness:live -- --suite public-pcaps --scenario all --driver smoke --model google/gemini-3.1-flash-lite-preview
+```
 
 ## Usage
 
@@ -155,7 +178,7 @@ If startup fails with `Failed to initialize sharkd` or a missing DLL error:
    - `libwsutil.dll`
 3. Restart PacketPilot.
 
-If the problem persists, open an issue and include the full startup debug block.
+If the problem persists, open Settings and use `Copy Diagnostics`, or copy the debug info from the startup banner, then include that output with the issue.
 
 ## Architecture
 
@@ -167,39 +190,33 @@ If the problem persists, open an issue and include the full startup debug block.
 │  │ (Virtual)   │  │  Panel      │  │                 │  │
 │  └─────────────┘  └─────────────┘  └─────────────────┘  │
 └───────────────────────────┬─────────────────────────────┘
-                            │ Tauri IPC + HTTP
+                            │ Electron preload IPC
         ┌───────────────────┼───────────────────┐
         ▼                   ▼                   ▼
-┌───────────────┐  ┌─────────────────┐  ┌──────────────┐
-│  Rust Backend │  │  AI Sidecar     │  │   sharkd     │
-│  (Tauri)      │◄─┤  (Python/LLM)   │  │  (Wireshark) │
-│               │  │                 │  │              │
-│  - IPC bridge │  │  - Tool calling │  │  - Dissector │
-│  - HTTP proxy │  │  - Streaming    │  │  - Filters   │
-└───────┬───────┘  └─────────────────┘  └──────┬───────┘
-        │                                       │
-        └───────────────────────────────────────┘
-                     JSON-RPC over stdin/stdout
+┌────────────────┐  ┌────────────────────┐  ┌──────────────┐
+│ Electron Main  │  │ OpenRouter Agent   │  │   sharkd     │
+│ (Node runtime) │◄─┤ (JavaScript SDK)   │  │  (Wireshark) │
+│                │  │                    │  │              │
+│ - File dialogs │  │ - Tool calling     │  │ - Dissector  │
+│ - Settings     │  │ - Streaming        │  │ - Filters    │
+│ - sharkd IPC   │  │ - Conversation     │  │ - Statistics │
+└────────────────┘  └────────────────────┘  └──────────────┘
 ```
 
 ## Project Structure
 
 ```
 packet-pilot/
+├── electron/               # Electron main/preload + Node services
+│   └── services/           # sharkd runtime + OpenRouter agent harness
+├── resources/              # Electron icons and bundled sharkd assets
+├── shared/                 # Typed contracts shared by renderer and main
 ├── src/                    # React frontend
 │   ├── components/         # UI components
 │   │   ├── PacketGrid/     # Virtualized packet table
 │   │   └── AiChat/         # AI chat panel
 │   └── App.tsx             # Main application
-├── src-tauri/              # Rust backend
-│   ├── src/
-│   │   ├── lib.rs          # Tauri commands & HTTP bridge
-│   │   └── sharkd_client.rs # Sharkd JSON-RPC client
-│   └── tauri.conf.json     # Tauri configuration
-├── sidecar/                # AI agent (Python)
-│   └── src/packet_pilot_ai/
-│       ├── services/       # AI agent with tool calling
-│       └── routes/         # FastAPI endpoints
+├── src-tauri/              # Archived Tauri implementation
 └── package.json
 ```
 
@@ -224,5 +241,5 @@ MIT License - see [LICENSE](LICENSE) for details.
 ## Acknowledgments
 
 - [Wireshark](https://www.wireshark.org/) - The world's foremost network protocol analyzer
-- [Tauri](https://tauri.app/) - Build smaller, faster, and more secure desktop applications
+- [Electron](https://www.electronjs.org/) - Cross-platform desktop runtime
 - [TanStack](https://tanstack.com/) - High-quality open-source software for web developers

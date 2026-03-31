@@ -1,16 +1,14 @@
 import { useState, useCallback, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import type {
-  LoadResult,
   FramesResult,
   FrameData,
   FrameDetails,
   InstallHealthStatus,
+  RuntimeDiagnostics,
 } from "../types";
+import { desktop } from "../lib/desktop";
 
 interface UseSharkdReturn {
-  // State
   isReady: boolean;
   isLoading: boolean;
   error: string | null;
@@ -19,14 +17,14 @@ interface UseSharkdReturn {
   fileName: string | null;
   duration: number | null;
   installHealth: InstallHealthStatus | null;
-  
-  // Actions
+  runtimeDiagnostics: RuntimeDiagnostics | null;
   loadFile: (path: string) => Promise<boolean>;
   loadFrames: (skip: number, limit: number) => Promise<void>;
   applyFilter: (filter: string) => Promise<boolean>;
   checkFilter: (filter: string) => Promise<boolean>;
   getFrameDetails: (frameNum: number) => Promise<FrameDetails | null>;
   runInstallHealthCheck: () => Promise<InstallHealthStatus | null>;
+  refreshRuntimeDiagnostics: () => Promise<RuntimeDiagnostics | null>;
   retryInitialization: () => Promise<boolean>;
   clearError: () => void;
   reset: () => void;
@@ -58,51 +56,61 @@ export function useSharkd(): UseSharkdReturn {
   const [fileName, setFileName] = useState<string | null>(null);
   const [duration, setDuration] = useState<number | null>(null);
   const [installHealth, setInstallHealth] = useState<InstallHealthStatus | null>(null);
+  const [runtimeDiagnostics, setRuntimeDiagnostics] = useState<RuntimeDiagnostics | null>(null);
+
+  const refreshRuntimeDiagnostics = useCallback(async (): Promise<RuntimeDiagnostics | null> => {
+    try {
+      const diagnostics = await desktop.app.getRuntimeDiagnostics();
+      setRuntimeDiagnostics(diagnostics);
+      return diagnostics;
+    } catch (err) {
+      console.error("Failed to fetch runtime diagnostics:", err);
+      return null;
+    }
+  }, []);
 
   const runInstallHealthCheck = useCallback(async (): Promise<InstallHealthStatus | null> => {
     try {
-      const health = await invoke<InstallHealthStatus>("get_install_health");
+      const health = await desktop.sharkd.getInstallHealth();
       setInstallHealth(health);
+      void refreshRuntimeDiagnostics();
 
       if (!health.ok) {
         setIsReady(false);
         setError(formatInstallHealthError(health));
       } else {
         setError((prev) =>
-          prev?.startsWith("PacketPilot installation needs repair.") ? null : prev
+          prev?.startsWith("PacketPilot installation needs repair.") ? null : prev,
         );
       }
 
       return health;
-    } catch (e) {
-      console.error("Failed to run install health check:", e);
+    } catch (err) {
+      console.error("Failed to run install health check:", err);
       return null;
     }
-  }, []);
+  }, [refreshRuntimeDiagnostics]);
 
   const initializeSharkd = useCallback(async (): Promise<boolean> => {
-    // Try to connect to sharkd with retries
-    for (let i = 0; i < 10; i++) {
+    for (let attempt = 0; attempt < 10; attempt++) {
       try {
-        if (typeof invoke !== "function") {
-          await new Promise((resolve) => setTimeout(resolve, 300));
-          continue;
-        }
-
-        await invoke("get_status");
+        await desktop.sharkd.getStatus();
         setIsReady(true);
         setError(null);
+        void refreshRuntimeDiagnostics();
         return true;
       } catch {
         try {
-          await invoke("init_sharkd");
+          await desktop.sharkd.init();
           setIsReady(true);
           setError(null);
+          void refreshRuntimeDiagnostics();
           return true;
-        } catch (e) {
-          if (i === 9) {
-            const errMsg = e instanceof Error ? e.message : String(e);
-            setError(`Failed to initialize sharkd: ${errMsg}`);
+        } catch (err) {
+          if (attempt === 9) {
+            const message = err instanceof Error ? err.message : String(err);
+            setError(`Failed to initialize sharkd: ${message}`);
+            void refreshRuntimeDiagnostics();
           } else {
             await new Promise((resolve) => setTimeout(resolve, 500));
           }
@@ -111,7 +119,7 @@ export function useSharkd(): UseSharkdReturn {
     }
 
     return false;
-  }, []);
+  }, [refreshRuntimeDiagnostics]);
 
   const retryInitialization = useCallback(async (): Promise<boolean> => {
     setError(null);
@@ -125,38 +133,35 @@ export function useSharkd(): UseSharkdReturn {
     return initializeSharkd();
   }, [initializeSharkd, runInstallHealthCheck]);
 
-  // Initialize sharkd on mount
   useEffect(() => {
     let cancelled = false;
-    let unlistenFn: (() => void) | null = null;
+    let unlisten: (() => void) | null = null;
 
     const setup = async () => {
-      // Listen for sharkd errors
-      try {
-        const fn = await listen<string>("sharkd-error", (event) => {
-          if (!cancelled) setError(`Sharkd error: ${event.payload}`);
-        });
-        unlistenFn = fn;
-      } catch (e) {
-        console.error("Failed to set up listener:", e);
-      }
+      unlisten = desktop.sharkd.onError((message) => {
+        if (!cancelled) {
+          setError(`Sharkd error: ${message}`);
+          void refreshRuntimeDiagnostics();
+        }
+      });
 
       if (cancelled) return;
       const health = await runInstallHealthCheck();
-      if (cancelled) return;
-      if (health && !health.ok) {
+      if (cancelled || (health && !health.ok)) {
         return;
       }
 
       await initializeSharkd();
     };
 
-    const timer = setTimeout(setup, 500);
+    const timer = setTimeout(() => {
+      void setup();
+    }, 200);
 
     return () => {
       cancelled = true;
       clearTimeout(timer);
-      if (unlistenFn) unlistenFn();
+      unlisten?.();
     };
   }, [initializeSharkd, runInstallHealthCheck]);
 
@@ -167,43 +172,39 @@ export function useSharkd(): UseSharkdReturn {
     setTotalFrames(0);
 
     try {
-      const result = await invoke<LoadResult>("load_pcap", { path });
-
-      if (result.success) {
-        setFileName(path.split(/[/\\]/).pop() || path);
-        setTotalFrames(result.frame_count);
-        setDuration(result.duration);
-        setIsLoading(false);
-        return true;
-      } else {
+      const result = await desktop.sharkd.loadPcap(path);
+      if (!result.success) {
         setError(result.error || "Failed to load file");
-        setIsLoading(false);
         return false;
       }
-    } catch (e) {
-      setError(`Error loading file: ${e}`);
-      setIsLoading(false);
+
+      setFileName(path.split(/[/\\]/).pop() || path);
+      setTotalFrames(result.frame_count);
+      setDuration(result.duration);
+      return true;
+    } catch (err) {
+      setError(`Error loading file: ${err instanceof Error ? err.message : String(err)}`);
       return false;
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
   const loadFrames = useCallback(async (skip: number, limit: number): Promise<void> => {
     try {
       setIsLoading(true);
-      const result = await invoke<FramesResult>("get_frames", { skip, limit });
-
+      const result: FramesResult = await desktop.sharkd.getFrames(skip, limit);
       setFrames((prev) => {
-        // Fast merge using sparse array approach
         const next = [...prev];
-        result.frames.forEach((f) => {
-          next[f.number] = f;
+        result.frames.forEach((frame) => {
+          next[frame.number] = frame;
         });
         return next;
       });
       setTotalFrames(result.total);
-      setIsLoading(false);
-    } catch (e) {
-      console.error("Error loading frames:", e);
+    } catch (err) {
+      console.error("Error loading frames:", err);
+    } finally {
       setIsLoading(false);
     }
   }, []);
@@ -211,35 +212,21 @@ export function useSharkd(): UseSharkdReturn {
   const applyFilter = useCallback(async (filter: string): Promise<boolean> => {
     try {
       setIsLoading(true);
-      
-      if (!filter.trim()) {
-        await invoke<number>("apply_filter", { filter: "" });
-        setFrames([]);
-        const result = await invoke<FramesResult>("get_frames", { skip: 0, limit: 100 });
-        setFrames(result.frames);
-        setTotalFrames(result.total);
-        setIsLoading(false);
-        return true;
-      }
-
-      const newTotal = await invoke<number>("apply_filter", { filter });
-      setTotalFrames(newTotal);
+      const total = await desktop.sharkd.applyFilter(filter);
       setFrames([]);
-
-      const result = await invoke<FramesResult>("get_frames", { skip: 0, limit: 100 });
-      setFrames(result.frames);
-      setIsLoading(false);
+      setTotalFrames(total);
       return true;
-    } catch (e) {
-      console.error("Error applying filter:", e);
-      setIsLoading(false);
+    } catch (err) {
+      console.error("Error applying filter:", err);
       return false;
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
   const checkFilter = useCallback(async (filter: string): Promise<boolean> => {
     try {
-      return await invoke<boolean>("check_filter", { filter });
+      return await desktop.sharkd.checkFilter(filter);
     } catch {
       return false;
     }
@@ -247,9 +234,9 @@ export function useSharkd(): UseSharkdReturn {
 
   const getFrameDetails = useCallback(async (frameNum: number): Promise<FrameDetails | null> => {
     try {
-      return await invoke<FrameDetails>("get_frame_details", { frameNum });
-    } catch (e) {
-      console.error("Failed to get frame details:", e);
+      return await desktop.sharkd.getFrameDetails(frameNum);
+    } catch (err) {
+      console.error("Failed to get frame details:", err);
       return null;
     }
   }, []);
@@ -262,6 +249,7 @@ export function useSharkd(): UseSharkdReturn {
     setFileName(null);
     setDuration(null);
     setError(null);
+    setRuntimeDiagnostics(null);
   }, []);
 
   return {
@@ -273,12 +261,14 @@ export function useSharkd(): UseSharkdReturn {
     fileName,
     duration,
     installHealth,
+    runtimeDiagnostics,
     loadFile,
     loadFrames,
     applyFilter,
     checkFilter,
     getFrameDetails,
     runInstallHealthCheck,
+    refreshRuntimeDiagnostics,
     retryInitialization,
     clearError,
     reset,

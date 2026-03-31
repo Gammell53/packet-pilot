@@ -37,7 +37,7 @@
       "binaries/packet-pilot-ai"
     ],
     "resources": [
-      "binaries/wireshark-libs/*"
+      "binaries/sharkd-libs/*"
     ]
   }
 }

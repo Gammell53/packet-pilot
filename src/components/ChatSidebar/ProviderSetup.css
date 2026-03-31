@@ -1,0 +1,239 @@
+.provider-setup {
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.provider-setup-welcome {
+  margin-bottom: 4px;
+}
+
+.provider-setup-title {
+  margin: 0 0 4px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.provider-setup-subtitle {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* Provider Cards */
+.provider-card {
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-lg);
+  background: var(--bg-primary);
+  overflow: hidden;
+  transition: border-color var(--transition);
+  box-shadow: var(--shadow-xs);
+}
+
+.provider-card:hover {
+  border-color: var(--border-primary);
+}
+
+.provider-card.connected {
+  border-color: color-mix(in srgb, var(--accent-green) 40%, transparent);
+  background: color-mix(in srgb, var(--accent-green) 3%, var(--bg-primary));
+}
+
+.provider-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 0;
+}
+
+.provider-card-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.provider-card-status {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent-green);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.provider-card-status::before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent-green);
+}
+
+.provider-card-body {
+  padding: 10px 16px 16px;
+}
+
+.provider-card-desc {
+  margin: 0 0 10px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.provider-card-action {
+  width: 100%;
+  padding: 9px 16px;
+  font-size: 13px;
+}
+
+.provider-card-separator {
+  margin: 10px 0 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.provider-card-connected {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px 14px;
+}
+
+.provider-card-detail {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.provider-card-disconnect {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 0;
+  transition: color var(--transition);
+}
+
+.provider-card-disconnect:hover {
+  color: var(--accent-red);
+}
+
+/* API Key Input Row */
+.provider-card-key-row {
+  display: flex;
+  gap: 8px;
+}
+
+.provider-card-key-row input {
+  flex: 1;
+  padding: 9px 12px;
+  font-size: 13px;
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  min-width: 0;
+  transition: all var(--transition);
+}
+
+.provider-card-key-row input:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-blue) 12%, transparent);
+}
+
+.provider-card-key-row input::placeholder {
+  color: var(--text-muted);
+}
+
+.provider-card-key-row .btn-primary {
+  padding: 9px 16px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+/* Get API Key link */
+.provider-card-get-key {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--accent-blue);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  transition: opacity var(--transition);
+}
+
+.provider-card-get-key:hover {
+  text-decoration: underline;
+  opacity: 0.8;
+}
+
+/* Error */
+.provider-setup-error {
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--accent-red) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-red) 20%, transparent);
+  border-radius: var(--radius-md);
+  color: var(--accent-red);
+  font-size: 12px;
+}
+
+.provider-setup-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* Model Selector */
+.provider-setup-model {
+  margin-top: 4px;
+}
+
+.provider-setup-model label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.provider-setup-model select {
+  width: 100%;
+  padding: 9px 12px;
+  font-size: 13px;
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: inherit;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M2.5 4.5L6 8l3.5-3.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+  transition: all var(--transition);
+}
+
+.provider-setup-model select:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-blue) 12%, transparent);
+}
+
+.provider-setup-model select option {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}

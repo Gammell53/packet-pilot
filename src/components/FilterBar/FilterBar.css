@@ -4,9 +4,9 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 16px;
+  padding: 0 20px;
   background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-primary);
+  border-bottom: 1px solid var(--border-secondary);
   flex-shrink: 0;
 }
 
@@ -15,24 +15,26 @@
   display: flex;
   align-items: center;
   background: var(--bg-primary);
-  border: 1px solid var(--border-primary);
-  border-radius: 6px;
-  padding: 0 10px;
-  transition: border-color 0.15s ease;
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-md);
+  padding: 0 12px;
+  transition: all var(--transition);
 }
 
 .filter-input-wrapper:focus-within {
   border-color: var(--accent-blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-blue) 12%, transparent);
 }
 
 .filter-input-wrapper.error {
-  border-color: var(--accent-red);
+  border-color: color-mix(in srgb, var(--accent-red) 40%, transparent);
+  background: color-mix(in srgb, var(--accent-red) 4%, var(--bg-primary));
 }
 
 .filter-icon {
   color: var(--text-muted);
   flex-shrink: 0;
-  margin-right: 4px;
+  margin-right: 6px;
 }
 
 .filter-input {
@@ -42,7 +44,7 @@
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: 12px;
-  padding: 8px 4px;
+  padding: 9px 6px;
   outline: none;
 }
 
@@ -58,6 +60,7 @@
   cursor: pointer;
   padding: 0 4px;
   line-height: 1;
+  transition: color var(--transition-fast);
 }
 
 .filter-clear:hover {
@@ -65,19 +68,20 @@
 }
 
 .filter-apply {
-  padding: 6px 12px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-primary);
-  border-radius: 6px;
-  color: var(--text-primary);
+  padding: 6px 14px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--transition);
 }
 
 .filter-apply:hover {
-  background: var(--bg-hover);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
 }
 
 .filter-error {

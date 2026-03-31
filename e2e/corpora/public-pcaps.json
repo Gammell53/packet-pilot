@@ -1,0 +1,140 @@
+{
+  "defaultId": "dhcp-basic",
+  "defaultModel": "google/gemini-3.1-flash-lite-preview",
+  "sourcePage": "https://wiki.wireshark.org/SampleCaptures",
+  "captures": {
+    "dhcp-basic": {
+      "title": "DHCP Host Configuration",
+      "category": "benign",
+      "sourcePage": "https://wiki.wireshark.org/SampleCaptures",
+      "downloadUrl": "https://wiki.wireshark.org/uploads/__moin_import__/attachments/SampleCaptures/dhcp.pcap",
+      "localFileName": "dhcp.pcap",
+      "starterPrompts": [
+        "What is happening in this DHCP exchange?",
+        "Which hosts are involved, and what stage of host configuration is this?",
+        "Suggest a display filter that focuses on the DHCP traffic."
+      ],
+      "query": "Identify the main protocol in this capture and summarize the host-configuration activity taking place.",
+      "requiredFacts": ["DHCP"],
+      "requiredPatterns": ["(?:offer|request|ack|lease|configuration)"]
+    },
+    "dns-lookups": {
+      "title": "DNS Lookups",
+      "category": "benign",
+      "sourcePage": "https://wiki.wireshark.org/SampleCaptures",
+      "downloadUrl": "https://wiki.wireshark.org/uploads/__moin_import__/attachments/SampleCaptures/dns.cap",
+      "localFileName": "dns.cap",
+      "starterPrompts": [
+        "What domains are being looked up here?",
+        "Is this mostly queries, responses, or both?",
+        "What filter would isolate the DNS traffic?"
+      ],
+      "query": "What protocol is shown here and what kind of activity is happening?",
+      "requiredFacts": ["DNS"],
+      "requiredPatterns": ["(?:query|queries|lookup|response|request)"]
+    },
+    "http-sample": {
+      "title": "HTTP Requests",
+      "category": "benign",
+      "sourcePage": "https://wiki.wireshark.org/SampleCaptures",
+      "downloadUrl": "https://wiki.wireshark.org/uploads/__moin_import__/attachments/SampleCaptures/nb6-http.pcap",
+      "localFileName": "nb6-http.pcap",
+      "starterPrompts": [
+        "What HTTP activity is in this capture?",
+        "Are there multiple HTTP requests or just one?",
+        "Which endpoints appear to be client and server?"
+      ],
+      "query": "What application-layer protocol is shown and what kind of user activity does it appear to capture?",
+      "requiredFacts": ["HTTP"],
+      "requiredPatterns": ["(?:request|requests|web|browser)"]
+    },
+    "sip-rtp-sample": {
+      "title": "SIP and RTP Sample",
+      "category": "voip",
+      "sourcePage": "https://wiki.wireshark.org/SampleCaptures",
+      "downloadUrl": "https://wiki.wireshark.org/uploads/__moin_import__/attachments/SampleCaptures/aaa.pcap",
+      "localFileName": "aaa.pcap",
+      "starterPrompts": [
+        "Does this capture contain VoIP signaling and media?",
+        "Which protocol handles signaling, and which carries the audio?",
+        "What filter would isolate the call setup messages?"
+      ],
+      "query": "What two protocols dominate this VoIP capture: the signaling protocol and the media protocol?",
+      "requiredFacts": ["SIP", "RTP"]
+    },
+    "sip-g711-call": {
+      "title": "SIP RTP G.711 Call",
+      "category": "voip",
+      "sourcePage": "https://wiki.wireshark.org/SampleCaptures",
+      "downloadUrl": "https://wiki.wireshark.org/uploads/__moin_import__/attachments/SampleCaptures/sip-rtp-g711.pcap",
+      "localFileName": "sip-rtp-g711.pcap",
+      "starterPrompts": [
+        "What evidence suggests this is a phone call?",
+        "Which signaling protocol is used?",
+        "Suggest a filter for only the RTP packets."
+      ],
+      "query": "Does this capture show VoIP traffic, and which signaling protocol is used?",
+      "requiredFacts": ["SIP"],
+      "requiredPatterns": ["(?:RTP|VoIP|call|media)"]
+    },
+    "arp-storm": {
+      "title": "ARP Storm",
+      "category": "anomaly",
+      "sourcePage": "https://wiki.wireshark.org/SampleCaptures",
+      "downloadUrl": "https://wiki.wireshark.org/uploads/__moin_import__/attachments/SampleCaptures/arp-storm.pcap",
+      "localFileName": "arp-storm.pcap",
+      "starterPrompts": [
+        "What anomaly is visible in this ARP capture?",
+        "Is there evidence of repeated ARP requests?",
+        "How would you filter to focus on the noisy traffic?"
+      ],
+      "query": "What anomaly is visible in this capture?",
+      "requiredFacts": ["ARP"],
+      "requiredPatterns": ["(?:storm|many|repeated|burst).{0,20}(?:arp|request)"]
+    },
+    "slammer-worm": {
+      "title": "Slammer Worm Traffic",
+      "category": "suspicious",
+      "sourcePage": "https://wiki.wireshark.org/SampleCaptures",
+      "downloadUrl": "https://wiki.wireshark.org/uploads/__moin_import__/attachments/SampleCaptures/slammer.pcap",
+      "localFileName": "slammer.pcap",
+      "starterPrompts": [
+        "What transport protocol and port stand out here?",
+        "Does this resemble worm traffic or scanning behavior?",
+        "What filter would isolate the suspicious packets?"
+      ],
+      "query": "What transport protocol and destination port stand out in this capture, and does it resemble worm traffic?",
+      "requiredFacts": ["UDP"],
+      "requiredPatterns": ["\\b1434\\b", "(?:worm|slammer|scan|flood)"]
+    },
+    "dns-remoteshell": {
+      "title": "DNS Remote Shell Anomaly",
+      "category": "suspicious",
+      "sourcePage": "https://wiki.wireshark.org/SampleCaptures",
+      "downloadUrl": "https://wiki.wireshark.org/uploads/__moin_import__/attachments/SampleCaptures/dns-remoteshell.pcap",
+      "localFileName": "dns-remoteshell.pcap",
+      "starterPrompts": [
+        "Does this look like normal DNS or suspicious payload behavior?",
+        "What signs point to tunneling or command traffic over DNS?",
+        "Which filter would narrow this to the suspicious DNS packets?"
+      ],
+      "query": "Does this capture look like normal DNS, or does it show suspicious payload behavior over DNS?",
+      "requiredFacts": ["DNS"],
+      "requiredPatterns": ["(?:suspicious|anomal|shell|payload|tunnel)"]
+    },
+    "teardrop-attack": {
+      "title": "Teardrop Fragmentation Attack",
+      "category": "suspicious",
+      "sourcePage": "https://wiki.wireshark.org/SampleCaptures",
+      "downloadUrl": "https://wiki.wireshark.org/uploads/__moin_import__/attachments/SampleCaptures/teardrop.cap",
+      "localFileName": "teardrop.cap",
+      "starterPrompts": [
+        "Is there evidence of overlapping IP fragments here?",
+        "What attack pattern is visible in these packets?",
+        "What filter would isolate the malformed fragments?"
+      ],
+      "query": "What attack pattern is present in these packets?",
+      "requiredPatterns": ["(?:overlap|overlapping).{0,24}(?:fragment|fragments)", "(?:teardrop|fragmentation attack|malformed fragments)"]
+    }
+  }
+}

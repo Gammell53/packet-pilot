@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import type { ProtoNode, FrameDetails } from "../../types";
+import { desktop } from "../../lib/desktop";
 import "./PacketDetailPane.css";
 
 interface PacketDetailPaneProps {
@@ -22,9 +22,7 @@ export function PacketDetailPane({ frameNumber }: PacketDetailPaneProps) {
     const fetchDetails = async () => {
       setLoading(true);
       try {
-        const result = await invoke<FrameDetails>("get_frame_details", {
-          frameNum: frameNumber,
-        });
+        const result = await desktop.sharkd.getFrameDetails(frameNumber);
         setDetails(result);
         // Auto-expand first level
         if (result.tree) {

@@ -1,5 +1,5 @@
 # Bundle sharkd for Windows distribution.
-# Produces canonical Tauri binary names and copies the exact DLL names
+# Produces canonical Electron runtime names and copies the exact DLL names
 # required by sharkd imports when possible.
 
 param(
@@ -11,8 +11,8 @@ $ErrorActionPreference = "Stop"
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Split-Path -Parent $ScriptDir
-$OutputDir = Join-Path $ProjectRoot "src-tauri\binaries"
-$LibsDir = Join-Path $OutputDir "wireshark-libs"
+$OutputDir = Join-Path $ProjectRoot "resources\sharkd"
+$LibsDir = Join-Path $OutputDir "sharkd-libs"
 $Target = "x86_64-pc-windows-msvc"
 
 $PossibleWiresharkDirs = @(
@@ -214,7 +214,7 @@ $SearchDirs = @(
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 New-Item -ItemType Directory -Force -Path $LibsDir | Out-Null
 
-# Canonical runtime names expected by Tauri + backend resolver.
+# Canonical runtime names expected by the Electron resolver.
 $DestCanonical = Join-Path $OutputDir "sharkd-$Target.exe"
 $DestWrapper = Join-Path $OutputDir "sharkd-wrapper-$Target.exe"
 $DestLegacy = Join-Path $OutputDir "sharkd.exe"

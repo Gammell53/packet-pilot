@@ -39,7 +39,7 @@ export function ChatInput({ onSend, isLoading, disabled, onStop }: ChatInputProp
         value={input}
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder={disabled ? "Start sidecar first..." : "Ask about your packets..."}
+        placeholder={disabled ? "Start the AI assistant first..." : "Ask about your packets..."}
         disabled={isLoading || disabled}
         rows={1}
       />

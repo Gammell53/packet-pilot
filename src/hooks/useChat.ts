@@ -1,63 +1,149 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import type { ChatMessage, CaptureContext } from "../types";
+import { desktop } from "../lib/desktop";
 
-const SIDECAR_URL = "http://127.0.0.1:8765";
-const THROTTLE_MS = 50; // Update UI every 50ms for smooth rendering
+const THROTTLE_MS = 50;
 
 interface UseChatOptions {
   context: CaptureContext;
-  model?: string;
+  selectedModel: string;
 }
 
-// Convert message to API format (snake_case, strip unnecessary fields)
-function toApiMessage(msg: ChatMessage) {
+function toApiMessage(message: ChatMessage) {
   return {
-    id: msg.id,
-    role: msg.role,
-    content: msg.content,
-    timestamp: msg.timestamp,
-    context: msg.context
-      ? {
-          selected_packet_id: msg.context.selectedPacketId,
-          selected_stream_id: msg.context.selectedStreamId,
-          visible_range: msg.context.visibleRange,
-          current_filter: msg.context.currentFilter,
-          file_name: msg.context.fileName,
-          total_frames: msg.context.totalFrames,
-        }
-      : null,
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    timestamp: message.timestamp,
+    context: message.context,
   };
 }
 
-export function useChat({ context, model }: UseChatOptions) {
+export function useChat({ context, selectedModel }: UseChatOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Refs for throttled streaming updates
-  const streamBufferRef = useRef<string>("");
-  const lastUpdateRef = useRef<number>(0);
+  const streamBufferRef = useRef("");
+  const lastUpdateRef = useRef(0);
+  const requestVersionRef = useRef(0);
   const currentAssistantIdRef = useRef<string | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const currentStreamIdRef = useRef<string | null>(null);
+
+  const finalizeAssistantMessage = useCallback((assistantId: string | null, content: string) => {
+    if (!assistantId) {
+      return;
+    }
+
+    setMessages((prev) =>
+      prev.map((message) =>
+        message.id === assistantId
+          ? { ...message, content, isStreaming: false }
+          : message,
+      ),
+    );
+  }, []);
+
+  const resetActiveStreamState = useCallback(() => {
+    currentAssistantIdRef.current = null;
+    currentStreamIdRef.current = null;
+    streamBufferRef.current = "";
+    lastUpdateRef.current = 0;
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = desktop.ai.onStreamEvent((event) => {
+      if (event.streamId !== currentStreamIdRef.current) {
+        return;
+      }
+
+      if (event.type === "text") {
+        streamBufferRef.current += event.text;
+        const now = Date.now();
+        if (now - lastUpdateRef.current >= THROTTLE_MS) {
+          const assistantId = currentAssistantIdRef.current;
+          if (!assistantId) return;
+
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === assistantId
+                ? { ...message, content: streamBufferRef.current }
+                : message,
+            ),
+          );
+          lastUpdateRef.current = now;
+        }
+        return;
+      }
+
+      if (event.type === "done") {
+        const assistantId = currentAssistantIdRef.current;
+        const finalContent = event.result.message || streamBufferRef.current;
+        finalizeAssistantMessage(assistantId, finalContent);
+        setIsLoading(false);
+        resetActiveStreamState();
+        return;
+      }
+
+      if (event.type === "aborted") {
+        finalizeAssistantMessage(currentAssistantIdRef.current, streamBufferRef.current);
+        setIsLoading(false);
+        resetActiveStreamState();
+        return;
+      }
+
+      if (event.type === "error") {
+        const assistantId = currentAssistantIdRef.current;
+        setMessages((prev) => {
+          const withoutStreaming = assistantId ? prev.filter((message) => message.id !== assistantId) : prev;
+          return [
+            ...withoutStreaming,
+            {
+              id: crypto.randomUUID(),
+              role: "system",
+              content: `Error: ${event.error}`,
+              timestamp: Date.now(),
+            },
+          ];
+        });
+        setIsLoading(false);
+        resetActiveStreamState();
+      }
+    });
+
+    return unsubscribe;
+  }, [finalizeAssistantMessage, resetActiveStreamState]);
 
   const sendMessage = useCallback(
     async (content: string, regenerateFromId?: string) => {
-      // Cancel any existing stream
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-      abortControllerRef.current = new AbortController();
+      requestVersionRef.current += 1;
+      const requestVersion = requestVersionRef.current;
 
-      // If regenerating, remove the message being regenerated
+      const previousAssistantId = currentAssistantIdRef.current;
+      const previousStreamId = currentStreamIdRef.current;
+      const previousContent = streamBufferRef.current;
+
+      if (previousAssistantId) {
+        finalizeAssistantMessage(previousAssistantId, previousContent);
+      }
+      resetActiveStreamState();
+
+      if (previousStreamId) {
+        void desktop.ai.cancelAnalyze(previousStreamId);
+      }
+
       let historyForApi = messages;
+      let requestModel = selectedModel;
       if (regenerateFromId) {
-        const msgIndex = messages.findIndex((m) => m.id === regenerateFromId);
-        if (msgIndex >= 0) {
-          // Remove the assistant message and use content from the user message before it
-          historyForApi = messages.slice(0, msgIndex);
+        const messageIndex = messages.findIndex((message) => message.id === regenerateFromId);
+        if (messageIndex >= 0) {
+          const messageToRegenerate = messages[messageIndex];
+          if (messageToRegenerate?.role === "assistant" && messageToRegenerate.model) {
+            requestModel = messageToRegenerate.model;
+          }
+          historyForApi = messages.slice(0, messageIndex);
           setMessages(historyForApi);
         }
       } else {
-        // Add user message for new messages
         const userMessage: ChatMessage = {
           id: crypto.randomUUID(),
           role: "user",
@@ -69,15 +155,17 @@ export function useChat({ context, model }: UseChatOptions) {
         historyForApi = [...messages, userMessage];
       }
 
-      // Create placeholder assistant message
       const assistantId = crypto.randomUUID();
       currentAssistantIdRef.current = assistantId;
+      streamBufferRef.current = "";
+      lastUpdateRef.current = 0;
 
       setMessages((prev) => [
         ...prev,
         {
           id: assistantId,
           role: "assistant",
+          model: requestModel,
           content: "",
           timestamp: Date.now(),
           isStreaming: true,
@@ -85,157 +173,68 @@ export function useChat({ context, model }: UseChatOptions) {
       ]);
 
       setIsLoading(true);
-      streamBufferRef.current = "";
-      lastUpdateRef.current = 0;
 
       try {
-        const response = await fetch(`${SIDECAR_URL}/analyze/stream`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            query: content,
-            context: {
-              selected_packet_id: context.selectedPacketId,
-              selected_stream_id: context.selectedStreamId,
-              visible_range: context.visibleRange,
-              current_filter: context.currentFilter,
-              file_name: context.fileName,
-              total_frames: context.totalFrames,
-            },
-            conversation_history: historyForApi.slice(-10).map(toApiMessage),
-            model: model || undefined,
-          }),
-          signal: abortControllerRef.current.signal,
+        const { streamId } = await desktop.ai.beginAnalyze({
+          query: content,
+          context,
+          conversation_history: historyForApi.slice(-10).map(toApiMessage),
+          model: requestModel || undefined,
         });
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const reader = response.body?.getReader();
-        const decoder = new TextDecoder();
-
-        if (!reader) {
-          throw new Error("No response body");
-        }
-
-        let buffer = "";
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-
-          // Process complete SSE lines
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || ""; // Keep incomplete line in buffer
-
-          for (const line of lines) {
-            if (!line.startsWith("data: ")) continue;
-
-            const data = line.slice(6);
-
-            // Handle completion
-            if (data === "[DONE]") {
-              continue;
-            }
-
-            try {
-              const parsed = JSON.parse(data);
-
-              // Handle error from backend
-              if (parsed.error) {
-                throw new Error(parsed.error);
-              }
-
-              // Handle text chunk
-              if (parsed.text) {
-                streamBufferRef.current += parsed.text;
-
-                // Throttled update
-                const now = Date.now();
-                if (now - lastUpdateRef.current >= THROTTLE_MS) {
-                  const currentContent = streamBufferRef.current;
-                  setMessages((prev) =>
-                    prev.map((msg) =>
-                      msg.id === assistantId
-                        ? { ...msg, content: currentContent }
-                        : msg
-                    )
-                  );
-                  lastUpdateRef.current = now;
-                }
-              }
-            } catch (e) {
-              // JSON parse error - might be incomplete, ignore
-              if (e instanceof SyntaxError) continue;
-              throw e;
-            }
-          }
-        }
-
-        // Final update with complete content
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === assistantId
-              ? { ...msg, content: streamBufferRef.current, isStreaming: false }
-              : msg
-          )
-        );
-      } catch (error) {
-        // Don't show error if we aborted
-        if (error instanceof Error && error.name === "AbortError") {
+        if (requestVersion !== requestVersionRef.current) {
+          void desktop.ai.cancelAnalyze(streamId);
           return;
         }
-
-        // Remove the streaming placeholder and add error message
-        setMessages((prev) => {
-          const withoutStreaming = prev.filter((m) => m.id !== assistantId);
-          return [
-            ...withoutStreaming,
-            {
-              id: crypto.randomUUID(),
-              role: "system",
-              content: `Error: ${error instanceof Error ? error.message : "Failed to connect to AI"}`,
-              timestamp: Date.now(),
-            },
-          ];
-        });
-      } finally {
+        currentStreamIdRef.current = streamId;
+      } catch (error) {
+        if (requestVersion !== requestVersionRef.current) {
+          return;
+        }
+        setMessages((prev) => [
+          ...prev.filter((message) => message.id !== assistantId),
+          {
+            id: crypto.randomUUID(),
+            role: "system",
+            content: `Error: ${error instanceof Error ? error.message : "Failed to connect to AI"}`,
+            timestamp: Date.now(),
+          },
+        ]);
         setIsLoading(false);
-        currentAssistantIdRef.current = null;
-        abortControllerRef.current = null;
+        resetActiveStreamState();
       }
     },
-    [context, messages, model]
+    [context, finalizeAssistantMessage, messages, resetActiveStreamState, selectedModel],
   );
 
   const regenerateLastResponse = useCallback(() => {
-    // Find the last assistant message
-    const lastAssistantIndex = messages.findLastIndex(
-      (m) => m.role === "assistant"
-    );
-    if (lastAssistantIndex < 0) return;
+    const lastAssistantIndex = messages.findLastIndex((message) => message.role === "assistant");
+    if (lastAssistantIndex < 0) {
+      return;
+    }
 
-    // Find the user message before it
-    const userMessageIndex = messages
+    const userIndex = messages
       .slice(0, lastAssistantIndex)
-      .findLastIndex((m) => m.role === "user");
-    if (userMessageIndex < 0) return;
+      .findLastIndex((message) => message.role === "user");
+    if (userIndex < 0) {
+      return;
+    }
 
-    const userMessage = messages[userMessageIndex];
+    const userMessage = messages[userIndex];
     const assistantMessage = messages[lastAssistantIndex];
-
-    // Regenerate from that assistant message
-    sendMessage(userMessage.content, assistantMessage.id);
+    void sendMessage(userMessage.content, assistantMessage.id);
   }, [messages, sendMessage]);
 
   const stopGeneration = useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
+    requestVersionRef.current += 1;
+    const activeStreamId = currentStreamIdRef.current;
+    finalizeAssistantMessage(currentAssistantIdRef.current, streamBufferRef.current);
+    resetActiveStreamState();
+    setIsLoading(false);
+
+    if (activeStreamId) {
+      void desktop.ai.cancelAnalyze(activeStreamId);
     }
-  }, []);
+  }, [finalizeAssistantMessage, resetActiveStreamState]);
 
   const clearHistory = useCallback(() => {
     stopGeneration();

@@ -15,6 +15,7 @@ body {
   font-family: var(--font-sans);
   font-size: 13px;
   line-height: 1.5;
+  letter-spacing: -0.01em;
   color: var(--text-primary);
   background: var(--bg-primary);
   -webkit-font-smoothing: antialiased;
@@ -24,19 +25,19 @@ body {
 /* Keyboard shortcut badge */
 kbd {
   display: inline-block;
-  padding: 2px 5px;
+  padding: 3px 6px;
   font-family: var(--font-mono);
   font-size: 10px;
   background: var(--bg-tertiary);
-  border: 1px solid var(--border-primary);
-  border-radius: 3px;
-  box-shadow: 0 1px 0 var(--shadow-color);
+  border: none;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-xs);
 }
 
 /* Scrollbar styling */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -45,7 +46,7 @@ kbd {
 
 ::-webkit-scrollbar-thumb {
   background: var(--bg-tertiary);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   border: 2px solid var(--bg-primary);
 }
 
@@ -61,7 +62,7 @@ kbd {
 .loading-spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid var(--border-primary);
+  border: 2px solid var(--border-primary);
   border-top-color: var(--accent-blue);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;

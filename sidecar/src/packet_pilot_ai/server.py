@@ -49,6 +49,12 @@ async def health():
     return {"status": "ok", "version": __version__}
 
 
+@app.get("/auth/capabilities")
+async def auth_capabilities():
+    from .services.provider import get_auth_capabilities
+    return get_auth_capabilities()
+
+
 # Import and include routers
 from .routes import analyze, filter as filter_route
 

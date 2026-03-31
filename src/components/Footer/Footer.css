@@ -4,12 +4,13 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
+  padding: 0 20px;
   background: var(--bg-secondary);
-  border-top: 1px solid var(--border-primary);
+  border-top: 1px solid var(--border-secondary);
   font-size: 11px;
   color: var(--text-muted);
   flex-shrink: 0;
+  letter-spacing: 0.01em;
 }
 
 .footer-left,
@@ -32,11 +33,12 @@
 }
 
 .status-dot {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   background: var(--text-muted);
   border-radius: 50%;
-  transition: background 0.3s ease;
+  transition: background var(--transition-slow);
+  opacity: 0.85;
 }
 
 .status-dot.ready {
@@ -44,9 +46,9 @@
 }
 
 .capture-stat {
-  padding: 2px 6px;
+  padding: 3px 8px;
   background: var(--bg-tertiary);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   font-family: var(--font-mono);
 }
 
@@ -61,4 +63,48 @@
 
 .shortcuts-hint {
   color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.shortcuts-hint kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  background: var(--bg-tertiary);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-xs);
+}
+
+/* AI Status in Footer */
+.ai-footer-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+}
+
+.ai-footer-running {
+  background: var(--accent-green);
+}
+
+.ai-footer-starting {
+  background: var(--accent-orange);
+  animation: ai-footer-pulse 1s ease-in-out infinite;
+}
+
+.ai-footer-offline {
+  background: var(--text-muted);
+}
+
+@keyframes ai-footer-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
 }

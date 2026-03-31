@@ -73,7 +73,7 @@ class TestAnalyzeFlow:
         context = create_test_context()
 
         with patch("packet_pilot_ai.services.ai_agent.get_capture_stats", new_callable=AsyncMock) as mock_stats, \
-             patch("packet_pilot_ai.services.ai_agent.get_openrouter_client", return_value=mock_client):
+             patch("packet_pilot_ai.services.ai_agent.get_client", return_value=mock_client):
 
             mock_stats.return_value = BASIC_CAPTURE_STATS
 
@@ -102,7 +102,7 @@ class TestAnalyzeFlow:
 
         with patch("packet_pilot_ai.services.ai_agent.get_capture_stats", new_callable=AsyncMock) as mock_stats, \
              patch("packet_pilot_ai.services.ai_agent.search_packets", new_callable=AsyncMock) as mock_search, \
-             patch("packet_pilot_ai.services.ai_agent.get_openrouter_client", return_value=mock_client):
+             patch("packet_pilot_ai.services.ai_agent.get_client", return_value=mock_client):
 
             mock_stats.return_value = BASIC_CAPTURE_STATS
             mock_search.return_value = {
@@ -130,7 +130,7 @@ class TestAnalyzeFlow:
         mock_client = create_mock_client(return_value=SIMPLE_TEXT_RESPONSE.to_openai_format())
 
         with patch("packet_pilot_ai.services.ai_agent.get_capture_stats", new_callable=AsyncMock) as mock_stats, \
-             patch("packet_pilot_ai.services.ai_agent.get_openrouter_client", return_value=mock_client):
+             patch("packet_pilot_ai.services.ai_agent.get_client", return_value=mock_client):
 
             mock_stats.return_value = BASIC_CAPTURE_STATS
 
@@ -151,7 +151,7 @@ class TestAnalyzeFlow:
         context = create_test_context()
 
         with patch("packet_pilot_ai.services.ai_agent.get_capture_stats", new_callable=AsyncMock) as mock_stats, \
-             patch("packet_pilot_ai.services.ai_agent.get_openrouter_client", return_value=mock_client):
+             patch("packet_pilot_ai.services.ai_agent.get_client", return_value=mock_client):
 
             mock_stats.return_value = BASIC_CAPTURE_STATS
 
@@ -174,7 +174,7 @@ class TestAnalyzeFlow:
         context = create_test_context()
 
         with patch("packet_pilot_ai.services.ai_agent.get_capture_stats", new_callable=AsyncMock) as mock_stats, \
-             patch("packet_pilot_ai.services.ai_agent.get_openrouter_client", return_value=mock_client):
+             patch("packet_pilot_ai.services.ai_agent.get_client", return_value=mock_client):
 
             mock_stats.return_value = None  # Stats fetch failed
 
@@ -221,7 +221,7 @@ class TestToolCallLoop:
         with patch("packet_pilot_ai.services.ai_agent.get_capture_stats", new_callable=AsyncMock) as mock_stats, \
              patch("packet_pilot_ai.services.ai_agent.search_packets", new_callable=AsyncMock) as mock_search, \
              patch("packet_pilot_ai.services.ai_agent.get_stream", new_callable=AsyncMock) as mock_stream, \
-             patch("packet_pilot_ai.services.ai_agent.get_openrouter_client", return_value=mock_client):
+             patch("packet_pilot_ai.services.ai_agent.get_client", return_value=mock_client):
 
             mock_stats.return_value = BASIC_CAPTURE_STATS
             mock_search.return_value = {"frames": DNS_TRAFFIC_FRAMES, "total_matching": 2, "filter_applied": "http"}
@@ -253,7 +253,7 @@ class TestToolCallLoop:
 
         with patch("packet_pilot_ai.services.ai_agent.get_capture_stats", new_callable=AsyncMock) as mock_stats, \
              patch("packet_pilot_ai.services.ai_agent.search_packets", new_callable=AsyncMock) as mock_search, \
-             patch("packet_pilot_ai.services.ai_agent.get_openrouter_client", return_value=mock_client):
+             patch("packet_pilot_ai.services.ai_agent.get_client", return_value=mock_client):
 
             mock_stats.return_value = BASIC_CAPTURE_STATS
             mock_search.return_value = {"frames": [], "total_matching": 0, "filter_applied": "tcp"}
@@ -291,7 +291,7 @@ class TestProtocolAwareToolCalls:
         context = create_test_context()
 
         with patch("packet_pilot_ai.services.ai_agent.get_stream", new_callable=AsyncMock) as mock_stream, \
-             patch("packet_pilot_ai.services.ai_agent.get_openrouter_client", return_value=mock_client):
+             patch("packet_pilot_ai.services.ai_agent.get_client", return_value=mock_client):
             mock_stream.return_value = HTTP_STREAM
 
             result = await analyze_packets("Summarize HTTP transaction stream 0", context, {}, [])
@@ -320,7 +320,7 @@ class TestProtocolAwareToolCalls:
         context = create_test_context()
 
         with patch("packet_pilot_ai.services.ai_agent.search_packets", new_callable=AsyncMock) as mock_search, \
-             patch("packet_pilot_ai.services.ai_agent.get_openrouter_client", return_value=mock_client):
+             patch("packet_pilot_ai.services.ai_agent.get_client", return_value=mock_client):
             mock_search.return_value = {"frames": DNS_TRAFFIC_FRAMES, "total_matching": 2, "filter_applied": "dns"}
 
             result = await analyze_packets("Analyze DNS behavior", context, {}, [])
@@ -350,7 +350,7 @@ class TestProtocolAwareToolCalls:
 
         with patch("packet_pilot_ai.services.ai_agent.search_packets", new_callable=AsyncMock) as mock_search, \
              patch("packet_pilot_ai.services.ai_agent.get_frame_details", new_callable=AsyncMock) as mock_details, \
-             patch("packet_pilot_ai.services.ai_agent.get_openrouter_client", return_value=mock_client):
+             patch("packet_pilot_ai.services.ai_agent.get_client", return_value=mock_client):
             mock_search.side_effect = [
                 {"frames": [{"number": 5, "info": "TLSv1.2 Client Hello"}], "total_matching": 1},
                 {"frames": [], "total_matching": 0},
@@ -389,7 +389,7 @@ class TestProtocolAwareToolCalls:
         context = create_test_context()
 
         with patch("packet_pilot_ai.services.ai_agent.search_packets", new_callable=AsyncMock) as mock_search, \
-             patch("packet_pilot_ai.services.ai_agent.get_openrouter_client", return_value=mock_client):
+             patch("packet_pilot_ai.services.ai_agent.get_client", return_value=mock_client):
             mock_search.side_effect = [
                 {"frames": [{"number": 1, "time": "1.0", "info": "dns"}], "total_matching": 1},
                 {"frames": [{"number": 2, "time": "2.0", "info": "tcp"}], "total_matching": 1},
@@ -433,7 +433,7 @@ class TestErrorRecovery:
 
         with patch("packet_pilot_ai.services.ai_agent.get_capture_stats", new_callable=AsyncMock) as mock_stats, \
              patch("packet_pilot_ai.services.ai_agent.search_packets", new_callable=AsyncMock) as mock_search, \
-             patch("packet_pilot_ai.services.ai_agent.get_openrouter_client", return_value=mock_client):
+             patch("packet_pilot_ai.services.ai_agent.get_client", return_value=mock_client):
 
             mock_stats.return_value = BASIC_CAPTURE_STATS
             mock_search.side_effect = Exception("Invalid filter syntax")
@@ -451,7 +451,7 @@ class TestErrorRecovery:
         context = create_test_context()
 
         with patch("packet_pilot_ai.services.ai_agent.get_capture_stats", new_callable=AsyncMock) as mock_stats, \
-             patch("packet_pilot_ai.services.ai_agent.get_openrouter_client", return_value=mock_client):
+             patch("packet_pilot_ai.services.ai_agent.get_client", return_value=mock_client):
 
             mock_stats.return_value = BASIC_CAPTURE_STATS
 
@@ -480,7 +480,7 @@ class TestRetryBehavior:
             ]
         )
 
-        with patch("packet_pilot_ai.services.ai_agent.get_openrouter_client", return_value=mock_client), \
+        with patch("packet_pilot_ai.services.ai_agent.get_client", return_value=mock_client), \
              patch("packet_pilot_ai.services.ai_agent.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             text = await call_llm(
                 [{"role": "user", "content": "hello"}],
@@ -503,7 +503,7 @@ class TestLoopMetadataAndBudgets:
         mock_client = create_mock_client(return_value=SIMPLE_TEXT_RESPONSE.to_openai_format())
         context = create_test_context()
 
-        with patch("packet_pilot_ai.services.ai_agent.get_openrouter_client", return_value=mock_client):
+        with patch("packet_pilot_ai.services.ai_agent.get_client", return_value=mock_client):
             result = await analyze_packets(
                 "Summarize traffic",
                 context,
@@ -523,7 +523,7 @@ class TestLoopMetadataAndBudgets:
         mock_client = create_mock_client(return_value=SEARCH_TOOL_CALL.to_openai_format())
         context = create_test_context()
 
-        with patch("packet_pilot_ai.services.ai_agent.get_openrouter_client", return_value=mock_client), \
+        with patch("packet_pilot_ai.services.ai_agent.get_client", return_value=mock_client), \
              patch("packet_pilot_ai.services.ai_agent.search_packets", new_callable=AsyncMock) as mock_search, \
              patch.dict("os.environ", {"AI_LOOP_MAX_MODEL_CALLS": "1"}, clear=False):
             result = await analyze_packets(

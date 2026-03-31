@@ -5,6 +5,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { MessageActions } from "./MessageActions";
 import type { ChatMessage as ChatMessageType } from "../../types";
+import { getModelDisplayName } from "../../constants/models";
 
 interface ChatMessageProps {
   message: ChatMessageType;
@@ -116,6 +117,11 @@ export function ChatMessage({
       className={`chat-message ${isUser ? "user" : isSystem ? "system" : "assistant"}`}
       data-message-id={message.id}
     >
+      {isAssistant && message.model && (
+        <div className="message-meta">
+          <span className="message-model-chip">{getModelDisplayName(message.model)}</span>
+        </div>
+      )}
       <div
         className="message-content"
         data-streaming={isStreaming ? "true" : undefined}

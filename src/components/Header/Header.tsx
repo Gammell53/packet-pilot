@@ -1,6 +1,8 @@
 import type { Theme } from "../../types";
 import "./Header.css";
 
+export type AiState = "running" | "starting" | "offline" | "unconfigured";
+
 interface HeaderProps {
   fileName: string | null;
   duration: number | null;
@@ -10,7 +12,13 @@ interface HeaderProps {
   onOpenFile: () => void;
   onToggleTheme: () => void;
   onOpenSettings: () => void;
+  aiState: AiState;
+  isChatOpen: boolean;
+  onToggleChat: () => void;
 }
+
+const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
+const chatShortcut = isMac ? "Cmd+K" : "Ctrl+K";
 
 export function Header({
   fileName,
@@ -21,6 +29,9 @@ export function Header({
   onOpenFile,
   onToggleTheme,
   onOpenSettings,
+  aiState,
+  isChatOpen,
+  onToggleChat,
 }: HeaderProps) {
   return (
     <header className="app-header">
@@ -71,6 +82,21 @@ export function Header({
               <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
             </svg>
           )}
+        </button>
+        <button
+          className={`ai-chat-button ${isChatOpen ? "active" : ""}`}
+          onClick={onToggleChat}
+          title={`AI Chat (${chatShortcut})`}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
+            <path d="M5 3v4" />
+            <path d="M19 17v4" />
+            <path d="M3 5h4" />
+            <path d="M17 19h4" />
+          </svg>
+          <span className="ai-chat-label">AI Chat</span>
+          <span className={`ai-status-dot ai-status-${aiState}`} />
         </button>
         <button
           className="open-button"

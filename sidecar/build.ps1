@@ -1,4 +1,6 @@
-# Build script for PacketPilot AI sidecar (Windows)
+# Archived build script for the legacy PacketPilot AI sidecar (Windows).
+# This path was used by the original Tauri packaging flow and is kept only
+# for migration forensics.
 
 $ErrorActionPreference = "Stop"
 

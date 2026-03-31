@@ -3,59 +3,84 @@
 /* ===== Dark Theme (Default) ===== */
 :root,
 [data-theme="dark"] {
-  /* Color palette - Dark terminal aesthetic */
-  --bg-primary: #0d1117;
-  --bg-secondary: #161b22;
-  --bg-tertiary: #21262d;
-  --bg-hover: #30363d;
-  --bg-selected: #1f6feb33;
-  
-  --text-primary: #e6edf3;
-  --text-secondary: #8b949e;
-  --text-muted: #6e7681;
-  
-  --border-primary: #30363d;
-  --border-secondary: #21262d;
-  
-  --accent-blue: #58a6ff;
-  --accent-green: #3fb950;
-  --accent-orange: #d29922;
-  --accent-red: #f85149;
-  --accent-purple: #bc8cff;
-  
-  --shadow-color: rgba(0, 0, 0, 0.3);
+  /* Color palette - Modern minimal dark */
+  --bg-primary: #0c0f14;
+  --bg-secondary: #14181f;
+  --bg-tertiary: #1c2028;
+  --bg-hover: #262b33;
+  --bg-selected: #4a90d933;
+
+  --text-primary: #e0e6ed;
+  --text-secondary: #8a919b;
+  --text-muted: #5c6370;
+
+  --border-primary: #1e2329;
+  --border-secondary: #181c22;
+
+  --accent-blue: #5b9cf5;
+  --accent-green: #3dae4a;
+  --accent-orange: #cc9020;
+  --accent-red: #e5534b;
+  --accent-purple: #b485f5;
+
+  --shadow-color: rgba(0, 0, 0, 0.4);
+
+  /* Shadow scale */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.14), 0 1px 2px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.14), 0 2px 4px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 20px rgba(0, 0, 0, 0.18), 0 4px 8px rgba(0, 0, 0, 0.12);
+  --shadow-xl: 0 20px 40px rgba(0, 0, 0, 0.24), 0 8px 16px rgba(0, 0, 0, 0.14);
 }
 
 /* ===== Light Theme ===== */
 [data-theme="light"] {
-  --bg-primary: #ffffff;
-  --bg-secondary: #f6f8fa;
-  --bg-tertiary: #eaeef2;
-  --bg-hover: #d0d7de;
+  --bg-primary: #fafbfc;
+  --bg-secondary: #f4f5f7;
+  --bg-tertiary: #e8ebef;
+  --bg-hover: #dce0e5;
   --bg-selected: #ddf4ff;
-  
+
   --text-primary: #24292f;
   --text-secondary: #57606a;
   --text-muted: #8c959f;
-  
-  --border-primary: #d0d7de;
-  --border-secondary: #eaeef2;
-  
+
+  --border-primary: #e2e5ea;
+  --border-secondary: #eff1f4;
+
   --accent-blue: #0969da;
   --accent-green: #1a7f37;
   --accent-orange: #9a6700;
   --accent-red: #cf222e;
   --accent-purple: #8250df;
-  
-  --shadow-color: rgba(0, 0, 0, 0.1);
+
+  --shadow-color: rgba(0, 0, 0, 0.06);
+
+  /* Shadow scale - lighter for light theme */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 10px 20px rgba(0, 0, 0, 0.08), 0 4px 8px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 40px rgba(0, 0, 0, 0.1), 0 8px 16px rgba(0, 0, 0, 0.05);
 }
 
-/* ===== Typography & Spacing ===== */
+/* ===== Typography, Spacing & Tokens ===== */
 :root {
   --font-mono: "JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace;
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-  
-  --header-height: 52px;
+
+  --header-height: 56px;
   --footer-height: 32px;
-  --filter-height: 44px;
+  --filter-height: 48px;
+
+  /* Border radius scale */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* Transition scale */
+  --transition-fast: 0.1s ease;
+  --transition: 0.15s ease;
+  --transition-slow: 0.25s ease;
 }

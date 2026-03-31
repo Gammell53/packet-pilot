@@ -1,32 +1,44 @@
 {
   "name": "packet-pilot",
+  "author": {
+    "name": "Alex Gammell",
+    "email": "gammell53@gmail.com"
+  },
   "description": "AI-powered network packet analyzer",
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "main": ".electron/electron/main.cjs",
   "license": "MIT",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "dev": "node scripts/dev-electron.mjs",
+    "dev:renderer": "vite",
+    "dev:main": "tsc -p tsconfig.electron.json --watch --preserveWatchOutput",
+    "build": "npm run build:renderer && npm run build:main",
+    "build:renderer": "tsc && vite build",
+    "build:main": "tsc -p tsconfig.electron.json",
     "verify:sharkd": "node scripts/verify-sharkd.cjs",
-    "build:sidecar": "cd sidecar && ./build.sh",
-    "build:sidecar:win": "powershell -ExecutionPolicy Bypass -File sidecar/build.ps1",
     "build:sharkd": "./scripts/bundle-sharkd.sh",
     "build:sharkd:win": "powershell -ExecutionPolicy Bypass -File scripts/bundle-sharkd.ps1",
-    "build:binaries": "npm run build:sidecar && npm run build:sharkd",
-    "build:binaries:win": "npm run build:sidecar:win && npm run build:sharkd:win",
+    "build:binaries": "npm run build:sharkd",
+    "build:binaries:win": "npm run build:sharkd:win",
     "preview": "vite preview",
-    "tauri": "tauri",
-    "tauri:build": "npm run verify:sharkd && npm run build:binaries && tauri build",
-    "tauri:build:win": "npm run verify:sharkd && npm run build:binaries:win && tauri build"
+    "start": "electron .electron/electron/main.cjs",
+    "smoke:packaged": "node scripts/run-electron-smoke.cjs",
+    "dist": "npm run verify:sharkd && npm run build && electron-builder",
+    "dist:win": "npm run verify:sharkd && npm run build && electron-builder --win nsis",
+    "corpus:list": "node scripts/public-pcap-corpus.cjs list",
+    "corpus:sync": "node scripts/public-pcap-corpus.cjs sync",
+    "corpus:open": "node scripts/public-pcap-corpus.cjs open",
+    "test:ai-harness": "npm run build:main && node --test scripts/tests/*.test.cjs",
+    "test:ai-harness:live": "npm run build:main && node scripts/run-ai-harness-live.cjs",
+    "test:e2e": "playwright test --config e2e/playwright.config.ts",
+    "test:e2e:ui": "playwright test --config e2e/playwright.config.ts --ui",
+    "test:e2e:headed": "playwright test --config e2e/playwright.config.ts --headed"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-dialog": "^2.4.2",
-    "@tauri-apps/plugin-opener": "^2",
-    "@tauri-apps/plugin-shell": "^2.3.3",
-    "@tauri-apps/plugin-store": "^2.4.1",
     "@types/react-syntax-highlighter": "^15.5.13",
+    "openai": "^5.12.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-markdown": "^10.1.0",
@@ -34,11 +46,56 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2",
+    "@playwright/test": "^1.58.2",
+    "@types/node": "^24.3.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "electron": "^37.2.0",
+    "electron-builder": "^26.0.12",
     "typescript": "~5.8.3",
     "vite": "^7.0.4"
+  },
+  "build": {
+    "appId": "com.alexanderg.packet-pilot",
+    "productName": "PacketPilot",
+    "files": [
+      "dist/**/*",
+      ".electron/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "buildResources": "resources/icons"
+    },
+    "extraResources": [
+      {
+        "from": "resources/sharkd",
+        "to": ".",
+        "filter": [
+          "sharkd-*",
+          "sharkd-wrapper-*",
+          "sharkd-libs/**/*",
+          "*.dll"
+        ]
+      }
+    ],
+    "win": {
+      "icon": "resources/icons/icon.ico",
+      "target": [
+        "nsis"
+      ]
+    },
+    "mac": {
+      "icon": "resources/icons/icon.icns"
+    },
+    "linux": {
+      "icon": "resources/icons/icon.png",
+      "category": "Utility",
+      "target": [
+        "AppImage",
+        "deb",
+        "tar.gz"
+      ]
+    }
   }
 }

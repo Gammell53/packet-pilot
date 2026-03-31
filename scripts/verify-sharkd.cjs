@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
  * Pre-build verification script for sharkd bundling
- * Run before tauri build to catch missing binaries early
+ * Run before Electron packaging to catch missing binaries early
  */
 
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-const BINARIES_DIR = path.join(__dirname, '..', 'src-tauri', 'binaries');
+const BINARIES_DIR = path.join(__dirname, '..', 'resources', 'sharkd');
 
 // Platform-specific binary names
 const PLATFORMS = {
@@ -110,7 +110,7 @@ function main() {
     console.error('   - Linux: sudo apt install wireshark-common');
     console.error('   - macOS: brew install wireshark');
     console.error('   - Windows: Download from wireshark.org');
-    console.error('\n2. Or place sharkd binary in src-tauri/binaries/');
+    console.error('\n2. Or place sharkd binary in resources/sharkd/');
     console.error(`   Expected: ${expectedBinary}`);
     process.exit(1);
   }

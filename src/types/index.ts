@@ -1,3 +1,14 @@
+import type {
+  AiRuntimeDiagnostics as DesktopAiRuntimeDiagnostics,
+  AiModelOption as DesktopAiModelOption,
+  AiRuntimeStatus as DesktopAiRuntimeStatus,
+  AiStreamEvent as DesktopAiStreamEvent,
+  AppSettings as DesktopAppSettings,
+  RuntimeDiagnostics as DesktopRuntimeDiagnostics,
+  RuntimeIssue as DesktopRuntimeIssue,
+  SharkdRuntimeDiagnostics as DesktopSharkdRuntimeDiagnostics,
+} from "../../shared/electron-api";
+
 // ============================================
 // Packet & Frame Types
 // ============================================
@@ -138,6 +149,7 @@ export interface ChatMessage {
   content: string;
   timestamp: number;
   context?: CaptureContext;
+  model?: string;
   isStreaming?: boolean;
   feedback?: "up" | "down";
 }
@@ -173,9 +185,11 @@ export interface FilterResponse {
   explanation: string;
 }
 
-export interface SidecarStatus {
-  is_running: boolean;
-  port: number;
-  version?: string;
-  error?: string;
-}
+export type AppSettings = DesktopAppSettings;
+export type AiModelOption = DesktopAiModelOption;
+export type AiRuntimeStatus = DesktopAiRuntimeStatus;
+export type AiRuntimeDiagnostics = DesktopAiRuntimeDiagnostics;
+export type AiStreamEvent = DesktopAiStreamEvent;
+export type RuntimeDiagnostics = DesktopRuntimeDiagnostics;
+export type RuntimeIssue = DesktopRuntimeIssue;
+export type SharkdRuntimeDiagnostics = DesktopSharkdRuntimeDiagnostics;

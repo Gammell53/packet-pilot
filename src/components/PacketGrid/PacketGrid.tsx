@@ -175,7 +175,16 @@ export const PacketGrid = forwardRef<PacketGridRef, PacketGridProps>(({
     onVisibleRangeChange?.(startIndex + 1, endIndex + 1);
   }, [startIndex, endIndex, totalFrames, onVisibleRangeChange]);
 
-  // Measure container height
+  // Reset scroll position when total frames changes (new file loaded or filter applied)
+  useEffect(() => {
+    setScrollTop(0);
+    if (containerRef.current) {
+      containerRef.current.scrollTop = 0;
+    }
+  }, [totalFrames]);
+
+  // Measure container height — re-run when totalFrames changes so the
+  // ResizeObserver attaches to the grid container after the empty-state swap.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -190,7 +199,7 @@ export const PacketGrid = forwardRef<PacketGridRef, PacketGridProps>(({
     setContainerHeight(container.clientHeight);
 
     return () => observer.disconnect();
-  }, []);
+  }, [totalFrames]);
 
   // Initial load is now handled by the debounced effect above
 

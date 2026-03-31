@@ -193,7 +193,7 @@ class TestToolSelection:
              patch("packet_pilot_ai.services.ai_agent.search_packets", side_effect=track_search), \
              patch("packet_pilot_ai.services.ai_agent.get_stream", side_effect=track_stream), \
              patch("packet_pilot_ai.services.ai_agent.get_frame_details", side_effect=track_details), \
-             patch("packet_pilot_ai.services.ai_agent.get_openrouter_client", return_value=mock_client):
+             patch("packet_pilot_ai.services.ai_agent.get_client", return_value=mock_client):
 
             mock_stats.return_value = BASIC_CAPTURE_STATS
 
@@ -253,7 +253,7 @@ class TestResponseQuality:
         )
 
         with patch("packet_pilot_ai.services.ai_agent.get_capture_stats", new_callable=AsyncMock) as mock_stats, \
-             patch("packet_pilot_ai.services.ai_agent.get_openrouter_client", return_value=mock_client):
+             patch("packet_pilot_ai.services.ai_agent.get_client", return_value=mock_client):
 
             mock_stats.return_value = BASIC_CAPTURE_STATS
 

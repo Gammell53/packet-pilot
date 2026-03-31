@@ -1,0 +1,43 @@
+{
+  "defaultScenario": "http-basic",
+  "defaultModel": "google/gemini-3.1-flash-lite-preview",
+  "scenarios": {
+    "http-basic": {
+      "fixture": "http-basic.txt",
+      "text2pcapArgs": ["-T", "12345,80", "-4", "10.1.1.10,10.1.1.20"],
+      "query": "What HTTP method is used and what Host header is present in this capture? Cite the packet or frame number.",
+      "requiredFacts": ["GET", "packetpilot.test"],
+      "requiredPatterns": ["(?:packet|frame)\\s*#?1"],
+      "expectTools": false,
+      "expectEvidence": true,
+      "drivers": ["smoke", "direct"]
+    },
+    "dns-a-record": {
+      "fixture": "dns-a-record.txt",
+      "text2pcapArgs": ["-D", "-u", "53000,53", "-4", "192.0.2.10,198.51.100.53"],
+      "query": "What hostname is being queried, what DNS record type is requested, and what IPv4 address is returned? Cite packet evidence.",
+      "requiredFacts": ["dns.packetpilot.test", "93.184.216.34"],
+      "requiredPatterns": ["\\bA(?:\\s+record)?\\b", "(?:packet|frame)\\s*#?2"],
+      "expectTools": true,
+      "expectEvidence": true,
+      "drivers": ["smoke", "direct"]
+    },
+    "tcp-follow-basic": {
+      "fixture": "tcp-follow-basic.txt",
+      "query": "Summarize this TCP conversation. What plaintext payload did 203.0.113.10 send to 203.0.113.20, and what plaintext payload came back? Do not name an application protocol unless the capture proves it.",
+      "requiredFacts": ["PING /alpha", "PONG /beta", "203.0.113.10", "203.0.113.20"],
+      "expectTools": true,
+      "requiredAnyToolNames": ["get_stream", "get_packet_details"],
+      "drivers": ["smoke", "direct"]
+    },
+    "syn-retry-anomaly": {
+      "fixture": "syn-retry-anomaly.txt",
+      "query": "What stands out in this capture? Mention the endpoints and whether the TCP handshake completes.",
+      "requiredPatterns": ["\\bSYN\\b", "(?:handshake.{0,60}(?:does\\s+not\\s+complete|doesn't\\s+complete|fails?\\s+to\\s+complete|never\\s+completes|is\\s+incomplete)|(?:no|never|not).{0,40}(?:handshake|connection|connect))", "10\\.9\\.0\\.10", "\\b443\\b"],
+      "expectTools": true,
+      "requiredAnyToolNames": ["search_packets", "get_capture_overview", "get_packet_details"],
+      "optionalSuggestedFilterContains": "tcp",
+      "drivers": ["smoke", "direct"]
+    }
+  }
+}

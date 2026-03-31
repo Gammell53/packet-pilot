@@ -180,7 +180,9 @@ fn get_sidecar_path() -> Result<std::path::PathBuf, String> {
 
 /// Spawn the Python sidecar process with config
 pub fn spawn_python_sidecar_with_config(
-    api_key: Option<String>,
+    auth_mode: String,
+    credential: Option<String>,
+    account_id: Option<String>,
     model: Option<String>,
 ) -> Result<u16, String> {
     let mut guard = get_python_process().lock();
@@ -204,11 +206,9 @@ pub fn spawn_python_sidecar_with_config(
     }
 
     let process = if is_production() {
-        // Production mode: use bundled binary
-        spawn_bundled_sidecar(api_key, model)?
+        spawn_bundled_sidecar(&auth_mode, credential.as_deref(), account_id.as_deref(), model.as_deref())?
     } else {
-        // Development mode: use Python directly
-        spawn_dev_sidecar(api_key, model)?
+        spawn_dev_sidecar(&auth_mode, credential.as_deref(), account_id.as_deref(), model.as_deref())?
     };
 
     println!("Python sidecar spawned with PID: {}", process.id());
@@ -219,8 +219,10 @@ pub fn spawn_python_sidecar_with_config(
 
 /// Spawn the bundled sidecar binary (production mode)
 fn spawn_bundled_sidecar(
-    api_key: Option<String>,
-    model: Option<String>,
+    auth_mode: &str,
+    credential: Option<&str>,
+    account_id: Option<&str>,
+    model: Option<&str>,
 ) -> Result<Child, String> {
     let sidecar_path = get_bundled_sidecar_path()
         .ok_or_else(|| "Could not find bundled sidecar binary".to_string())?;
@@ -230,22 +232,17 @@ fn spawn_bundled_sidecar(
     let mut cmd = Command::new(&sidecar_path);
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
-    // Pass environment variables
-    if let Some(key) = api_key {
-        cmd.env("OPENROUTER_API_KEY", key);
-    }
-    if let Some(m) = model {
-        cmd.env("AI_MODEL", m);
-    }
+    apply_ai_sidecar_env(&mut cmd, auth_mode, credential, account_id, model);
 
     cmd.spawn()
         .map_err(|e| format!("Failed to spawn bundled sidecar: {}", e))
 }
 
-/// Spawn the Python sidecar from source (development mode)
 fn spawn_dev_sidecar(
-    api_key: Option<String>,
-    model: Option<String>,
+    auth_mode: &str,
+    credential: Option<&str>,
+    account_id: Option<&str>,
+    model: Option<&str>,
 ) -> Result<Child, String> {
     let sidecar_path = get_sidecar_path()?;
     let python_cmd = find_python(&sidecar_path)?;
@@ -268,22 +265,42 @@ fn spawn_dev_sidecar(
     .stdout(Stdio::inherit())
     .stderr(Stdio::inherit());
 
-    // Pass OpenRouter API key
-    if let Some(key) = api_key {
-        cmd.env("OPENROUTER_API_KEY", key);
-    }
-
-    if let Some(m) = model {
-        cmd.env("AI_MODEL", m);
-    }
+    apply_ai_sidecar_env(&mut cmd, auth_mode, credential, account_id, model);
 
     cmd.spawn()
         .map_err(|e| format!("Failed to spawn Python sidecar: {}", e))
 }
 
+fn apply_ai_sidecar_env(
+    cmd: &mut Command,
+    auth_mode: &str,
+    credential: Option<&str>,
+    account_id: Option<&str>,
+    model: Option<&str>,
+) {
+    cmd.env("AI_AUTH_MODE", auth_mode);
+
+    if let Some(value) = credential {
+        cmd.env("AI_AUTH_CREDENTIAL", value);
+        match auth_mode {
+            "openrouter" => { cmd.env("OPENROUTER_API_KEY", value); },
+            "anthropic" => { cmd.env("ANTHROPIC_API_KEY", value); },
+            _ => {}
+        }
+    }
+
+    if let Some(value) = account_id {
+        cmd.env("CHATGPT_ACCOUNT_ID", value);
+    }
+
+    if let Some(value) = model {
+        cmd.env("AI_MODEL", value);
+    }
+}
+
 /// Spawn the Python sidecar process (legacy, no config)
 pub fn spawn_python_sidecar() -> Result<u16, String> {
-    spawn_python_sidecar_with_config(None, None)
+    spawn_python_sidecar_with_config("openrouter".to_string(), None, None, None)
 }
 
 /// Stop the Python sidecar process
@@ -324,11 +341,7 @@ pub fn check_python_sidecar() -> bool {
     use std::net::TcpStream;
     use std::time::Duration;
 
-    TcpStream::connect_timeout(
-        &"127.0.0.1:8765".parse().unwrap(),
-        Duration::from_secs(2),
-    )
-    .is_ok()
+    TcpStream::connect_timeout(&"127.0.0.1:8765".parse().unwrap(), Duration::from_secs(2)).is_ok()
 }
 
 /// Get the current status of the Python sidecar

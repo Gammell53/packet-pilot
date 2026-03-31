@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build script for PacketPilot AI sidecar
+# Archived build script for the legacy PacketPilot AI sidecar
 
 set -e
 
@@ -19,9 +19,9 @@ pip install pyinstaller --quiet
 # Build the executable
 pyinstaller --clean --noconfirm packet-pilot-ai.spec
 
-# Copy to the Tauri binaries directory
-TAURI_BIN_DIR="../src-tauri/binaries"
-mkdir -p "$TAURI_BIN_DIR"
+# Copy to an archive output directory
+ARCHIVE_BIN_DIR="../artifacts/legacy-sidecar"
+mkdir -p "$ARCHIVE_BIN_DIR"
 
 # Determine the target triple for the current platform
 case "$(uname -s)" in
@@ -47,11 +47,11 @@ case "$(uname -s)" in
         ;;
 esac
 
-# Copy the built executable with the target triple suffix (required by Tauri)
+# Copy the built executable with the target triple suffix for archival use
 BINARY_NAME="packet-pilot-ai-${TARGET}"
-cp "dist/packet-pilot-ai" "$TAURI_BIN_DIR/$BINARY_NAME"
-chmod +x "$TAURI_BIN_DIR/$BINARY_NAME"
+cp "dist/packet-pilot-ai" "$ARCHIVE_BIN_DIR/$BINARY_NAME"
+chmod +x "$ARCHIVE_BIN_DIR/$BINARY_NAME"
 
-echo "Built successfully: $TAURI_BIN_DIR/$BINARY_NAME"
+echo "Built successfully: $ARCHIVE_BIN_DIR/$BINARY_NAME"
 echo ""
-echo "Binary size: $(du -h "$TAURI_BIN_DIR/$BINARY_NAME" | cut -f1)"
+echo "Binary size: $(du -h "$ARCHIVE_BIN_DIR/$BINARY_NAME" | cut -f1)"

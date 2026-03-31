@@ -4,7 +4,8 @@
   flex-direction: column;
   height: 100%;
   background: var(--bg-primary);
-  border-top: 1px solid var(--border-primary);
+  border-top: none;
+  box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .packet-detail-pane.empty,
@@ -21,22 +22,22 @@
 .detail-tabs {
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 4px 8px;
+  gap: 4px;
+  padding: 6px 12px;
   background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-primary);
+  border-bottom: 1px solid var(--border-secondary);
 }
 
 .detail-tab {
-  padding: 6px 12px;
+  padding: 7px 14px;
   background: transparent;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--transition);
 }
 
 .detail-tab:hover {
@@ -45,8 +46,9 @@
 }
 
 .detail-tab.active {
-  background: var(--bg-tertiary);
+  background: color-mix(in srgb, var(--accent-blue) 12%, var(--bg-tertiary));
   color: var(--accent-blue);
+  box-shadow: var(--shadow-xs);
 }
 
 .detail-tab-info {
@@ -60,7 +62,7 @@
 .detail-content {
   flex: 1;
   overflow: auto;
-  padding: 8px;
+  padding: 12px;
 }
 
 /* Protocol Tree */
@@ -73,8 +75,8 @@
 .proto-node-label {
   display: flex;
   align-items: center;
-  padding: 2px 4px;
-  border-radius: 3px;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
   cursor: default;
   user-select: none;
 }
@@ -96,7 +98,7 @@
   width: 16px;
   font-size: 10px;
   color: var(--text-muted);
-  transition: transform 0.1s ease;
+  transition: transform var(--transition-fast);
   flex-shrink: 0;
   user-select: none;
 }
@@ -117,21 +119,22 @@
 }
 
 .proto-children {
-  border-left: 1px solid var(--border-secondary);
-  margin-left: 11px;
+  border-left: 1px solid color-mix(in srgb, var(--border-secondary) 50%, transparent);
+  margin-left: 12px;
 }
 
 /* Hex Dump */
 .hex-dump {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 12.5px;
   line-height: 1.4;
   color: var(--text-secondary);
   white-space: pre;
   margin: 0;
-  padding: 12px;
+  padding: 16px;
   background: var(--bg-secondary);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   overflow-x: auto;
-  border: 1px solid var(--border-primary);
+  border: none;
+  box-shadow: var(--shadow-sm);
 }

@@ -29,8 +29,8 @@ Under the hood, it uses Wireshark's actual dissection engine (sharkd), so you ge
 
 **Stack:**
 - Frontend: React + TypeScript
-- Backend: Rust (Tauri) — not Electron, actually fast
-- AI: Python sidecar with FastAPI
+- Desktop runtime: Electron + Node-managed `sharkd`
+- AI: OpenRouter-backed JavaScript SDK client running in the desktop process
 - The important bit: Wireshark's sharkd for real dissection
 
 **Why open source:**
@@ -52,7 +52,7 @@ Would love to hear what you think.
 
 1. **Pain is real** — Wireshark filters are notoriously hard to remember
 2. **Trust the engine** — We use Wireshark's actual dissector, not reinventing the wheel
-3. **Performance matters** — Tauri/Rust, not Electron bloat
+3. **Performance matters** — virtualized UI plus Wireshark's native dissector keeps the app responsive
 4. **Open source** — Security tools should be auditable
 5. **Looking for feedback** — HN loves being asked to critique
 

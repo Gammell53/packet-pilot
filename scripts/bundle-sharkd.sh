@@ -5,7 +5,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-OUTPUT_DIR="$PROJECT_ROOT/src-tauri/binaries"
+OUTPUT_DIR="$PROJECT_ROOT/resources/sharkd"
 
 # Determine target triple
 case "$(uname -s)" in
@@ -39,7 +39,7 @@ fi
 echo "Found sharkd at: $SHARKD_PATH"
 
 # Create output directory for libs
-LIBS_DIR="$OUTPUT_DIR/wireshark-libs"
+LIBS_DIR="$OUTPUT_DIR/sharkd-libs"
 mkdir -p "$LIBS_DIR"
 
 # Copy sharkd
@@ -65,15 +65,15 @@ cat > "$OUTPUT_DIR/sharkd-wrapper-$TARGET" << 'WRAPPER'
 #!/bin/bash
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Try multiple locations for the libs directory (Tauri bundles resources differently)
-if [ -d "$SCRIPT_DIR/wireshark-libs" ]; then
-    LIBS_DIR="$SCRIPT_DIR/wireshark-libs"
-elif [ -d "$SCRIPT_DIR/../lib/wireshark-libs" ]; then
-    LIBS_DIR="$SCRIPT_DIR/../lib/wireshark-libs"
-elif [ -d "$SCRIPT_DIR/../Resources/wireshark-libs" ]; then
-    LIBS_DIR="$SCRIPT_DIR/../Resources/wireshark-libs"
+# Try multiple locations for the libs directory in packaged app layouts
+if [ -d "$SCRIPT_DIR/sharkd-libs" ]; then
+    LIBS_DIR="$SCRIPT_DIR/sharkd-libs"
+elif [ -d "$SCRIPT_DIR/../lib/sharkd-libs" ]; then
+    LIBS_DIR="$SCRIPT_DIR/../lib/sharkd-libs"
+elif [ -d "$SCRIPT_DIR/../Resources/sharkd-libs" ]; then
+    LIBS_DIR="$SCRIPT_DIR/../Resources/sharkd-libs"
 else
-    LIBS_DIR="$SCRIPT_DIR/wireshark-libs"
+    LIBS_DIR="$SCRIPT_DIR/sharkd-libs"
 fi
 
 export LD_LIBRARY_PATH="$LIBS_DIR:$LD_LIBRARY_PATH"
@@ -91,5 +91,5 @@ echo "Bundled successfully!"
 echo "  sharkd binary: $OUTPUT_DIR/sharkd-$TARGET"
 echo "  Dependencies:  $LIBS_DIR/ ($(du -sh "$LIBS_DIR" | cut -f1))"
 echo ""
-echo "Note: For distribution, the Rust code should use sharkd-wrapper-$TARGET"
+echo "Note: For distribution, the desktop runtime should use sharkd-wrapper-$TARGET"
 echo "which sets up the library path correctly."

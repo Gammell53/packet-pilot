@@ -2459,9 +2459,13 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
+ "getrandom 0.2.16",
+ "libc",
+ "open",
  "parking_lot",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",

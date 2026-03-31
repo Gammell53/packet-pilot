@@ -1,4 +1,4 @@
-"""AI agent for packet analysis using OpenRouter."""
+"""AI agent for packet analysis with multi-provider support."""
 
 import json
 import os
@@ -10,6 +10,7 @@ import traceback
 from dataclasses import dataclass
 from typing import Any, Optional, AsyncIterator
 from openai import AsyncOpenAI, AuthenticationError, APIStatusError
+from .provider import get_provider, get_client, get_auth_mode
 
 from ..models.schemas import (
     AnalyzeResponse,
@@ -256,12 +257,13 @@ def _is_retryable_llm_error(error: Exception) -> bool:
     return isinstance(error, (TimeoutError, ConnectionError, OSError))
 
 
-async def _create_chat_completion_with_retry(
+async def _create_completion_with_retry(
     client: AsyncOpenAI,
     request_kwargs: dict[str, Any],
     *,
     operation: str,
     loop_state: LoopState | None = None,
+    streaming: bool = False,
 ):
     max_attempts = max(1, _env_int("AI_RETRY_MAX_ATTEMPTS", 3))
     base_delay = max(0.05, _env_float("AI_RETRY_BASE_DELAY_SECONDS", 0.4))
@@ -269,7 +271,10 @@ async def _create_chat_completion_with_retry(
 
     for attempt in range(1, max_attempts + 1):
         try:
-            return await client.chat.completions.create(**request_kwargs)
+            provider = get_provider()
+            if streaming:
+                return await provider.create_completion_streaming(client, request_kwargs)
+            return await provider.create_completion(client, request_kwargs)
         except Exception as exc:
             if attempt == max_attempts or not _is_retryable_llm_error(exc):
                 raise
@@ -325,31 +330,7 @@ class AIServiceError(Exception):
         self.user_message = user_message
 
 
-# OpenRouter client instance
-openai_client: Optional[AsyncOpenAI] = None
 
-
-def get_model() -> str:
-    """Get the configured model."""
-    return os.environ.get("AI_MODEL", "google/gemini-3-flash-preview")
-
-
-def get_openrouter_client() -> AsyncOpenAI:
-    """Get or create the OpenRouter client (uses OpenAI SDK)."""
-    global openai_client
-    if openai_client is None:
-        api_key = os.environ.get("OPENROUTER_API_KEY")
-        if not api_key:
-            raise ValueError("OPENROUTER_API_KEY environment variable is required")
-        openai_client = AsyncOpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=api_key,
-            default_headers={
-                "HTTP-Referer": "https://packetpilot.app",
-                "X-Title": "PacketPilot",
-            }
-        )
-    return openai_client
 
 
 SYSTEM_PROMPT = """You are PacketPilot AI, an expert network packet analyst. You help users understand network traffic in PCAP files.
@@ -465,7 +446,7 @@ async def _run_llm_loop(
     route: str = "llm_loop",
 ) -> LoopResult:
     """Run a bounded model/tool loop and return text + loop metadata."""
-    client = get_openrouter_client()
+    client = get_client()
     model = model_override or get_model()
     policy = LoopPolicy.from_env()
     state = LoopState(
@@ -477,11 +458,7 @@ async def _run_llm_loop(
     log(f"LLM request: model={model}, tools={use_tools}, request_id={state.request_id}")
     _log_loop_event("loop.start", state, model=model, tools=use_tools)
 
-    # OpenRouter uses OpenAI format - system message goes in messages array
     full_messages = [{"role": "system", "content": system}] + messages
-
-    # Note: Gemini models may have issues with tool calling via OpenRouter
-    # but returning empty responses is worse, so we enable tools and handle errors
 
     try:
         reason = _current_limit_reason(state, policy)
@@ -502,7 +479,7 @@ async def _run_llm_loop(
 
         state.model_calls += 1
         _log_loop_event("model.call.start", state, model=model, operation="initial")
-        response = await _create_chat_completion_with_retry(
+        response = await _create_completion_with_retry(
             client,
             kwargs,
             operation="initial completion",
@@ -586,7 +563,7 @@ async def _run_llm_loop(
             log(f"Making LLM call after tool execution (iteration {state.iterations})...")
             state.model_calls += 1
             _log_loop_event("model.call.start", state, model=model, operation="post_tools")
-            next_response = await _create_chat_completion_with_retry(
+            next_response = await _create_completion_with_retry(
                 client,
                 {
                     "model": model,
@@ -610,7 +587,7 @@ async def _run_llm_loop(
         _log_loop_event("loop.stop", state, model=model, tools=use_tools, error_class=type(e).__name__)
         raise AIServiceError(
             str(e),
-            "Invalid API key. Please update your OpenRouter API key in Settings."
+            "Invalid API key. Please check your AI provider credentials in Settings."
         )
     except APIStatusError as e:
         log(f"APIStatusError: status_code={e.status_code}")
@@ -629,7 +606,7 @@ async def _run_llm_loop(
         if e.status_code == 401:
             raise AIServiceError(
                 str(e),
-                "Invalid API key. Please update your OpenRouter API key in Settings."
+                "Invalid API key. Please check your AI provider credentials in Settings."
             )
         elif e.status_code == 402:
             raise AIServiceError(
@@ -696,15 +673,12 @@ async def call_llm_streaming(
     request_id: str | None = None,
     route: str = "llm_stream",
 ) -> AsyncIterator[str]:
-    """Call the OpenRouter API with streaming and optional tool support.
+    """Stream LLM responses with optional tool support.
 
-    Yields text chunks as they arrive. When tools are enabled:
-    - Streams text from the model
-    - When tool calls are detected, executes them
-    - Makes another streaming request with tool results
-    - Repeats until no more tool calls (max 5 iterations)
+    Yields text chunks as they arrive. When tools are enabled,
+    tool calls are executed and follow-up requests made automatically.
     """
-    client = get_openrouter_client()
+    client = get_client()
     model = model_override or get_model()
     policy = loop_policy or LoopPolicy.from_env()
     state = loop_state or LoopState(
@@ -716,7 +690,7 @@ async def call_llm_streaming(
     log(f"LLM streaming request: model={model}, tools={use_tools}, request_id={state.request_id}")
     _log_loop_event("loop.start", state, model=model, tools=use_tools)
 
-    # OpenRouter uses OpenAI format - system message goes in messages array
+    full_messages = [{"role": "system", "content": system}] + messages
     full_messages = [{"role": "system", "content": system}] + messages
 
     try:
@@ -735,17 +709,18 @@ async def call_llm_streaming(
                 "model": model,
                 "max_tokens": max_tokens,
                 "messages": full_messages,
-                "stream": True,
+
             }
             if use_tools:
                 kwargs["tools"] = TOOLS
                 kwargs["tool_choice"] = "auto"
 
-            stream = await _create_chat_completion_with_retry(
+            stream = await _create_completion_with_retry(
                 client,
                 kwargs,
                 operation=f"streaming iteration {state.iterations + 1}",
                 loop_state=state,
+                streaming=True,
             )
             _log_loop_event("model.call.end", state, model=model, operation="stream")
 
@@ -839,7 +814,7 @@ async def call_llm_streaming(
         _log_loop_event("loop.stop", state, model=model, tools=use_tools, error_class=type(e).__name__)
         raise AIServiceError(
             str(e),
-            "Invalid API key. Please update your OpenRouter API key in Settings."
+            "Invalid API key. Please check your AI provider credentials in Settings."
         )
     except APIStatusError as e:
         log(f"APIStatusError: status_code={e.status_code}")

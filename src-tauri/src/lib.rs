@@ -1,3 +1,4 @@
+mod auth;
 mod http_bridge;
 mod python_sidecar;
 mod sharkd_client;
@@ -45,6 +46,20 @@ pub struct FrameData {
     pub background: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub foreground: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AuthModeCapability {
+    pub mode: String,
+    pub label: String,
+    pub supported: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AuthCapabilities {
+    pub modes: Vec<AuthModeCapability>,
 }
 
 impl From<Frame> for FrameData {
@@ -178,6 +193,44 @@ fn get_frame_details(frame_num: u32) -> Result<serde_json::Value, String> {
     client.frame(frame_num)
 }
 
+#[tauri::command]
+fn get_ai_auth_capabilities() -> AuthCapabilities {
+    AuthCapabilities {
+        modes: vec![
+            AuthModeCapability {
+                mode: "openrouter".to_string(),
+                label: "OpenRouter API key".to_string(),
+                supported: true,
+                reason: None,
+            },
+            AuthModeCapability {
+                mode: "chatgpt".to_string(),
+                label: "OpenAI sign-in".to_string(),
+                supported: true,
+                reason: None,
+            },
+            AuthModeCapability {
+                mode: "anthropic".to_string(),
+                label: "Anthropic API key".to_string(),
+                supported: true,
+                reason: None,
+            },
+        ],
+    }
+}
+
+#[tauri::command(async)]
+fn chatgpt_login() -> Result<auth::AuthTokens, String> {
+    let (url, verifier) = auth::build_auth_url();
+
+    let _ = open::that(&url);
+
+    let code = auth::wait_for_callback()?;
+
+    auth::exchange_code(&code, &verifier)
+}
+
+
 // ============================================
 // AI Sidecar Commands
 // ============================================
@@ -185,10 +238,17 @@ fn get_frame_details(frame_num: u32) -> Result<serde_json::Value, String> {
 /// Start the Python AI sidecar with config
 #[tauri::command]
 fn start_ai_sidecar(
-    api_key: Option<String>,
+    auth_mode: Option<String>,
+    credential: Option<String>,
+    account_id: Option<String>,
     model: Option<String>,
 ) -> Result<python_sidecar::SidecarStatus, String> {
-    let port = python_sidecar::spawn_python_sidecar_with_config(api_key, model)?;
+    let port = python_sidecar::spawn_python_sidecar_with_config(
+        auth_mode.unwrap_or_else(|| "openrouter".to_string()),
+        credential,
+        account_id,
+        model,
+    )?;
 
     // Wait briefly for startup
     std::thread::sleep(std::time::Duration::from_millis(1000));
@@ -240,6 +300,8 @@ pub fn run() {
             check_filter,
             apply_filter,
             get_frame_details,
+            get_ai_auth_capabilities,
+            chatgpt_login,
             get_install_health,
             start_ai_sidecar,
             stop_ai_sidecar,

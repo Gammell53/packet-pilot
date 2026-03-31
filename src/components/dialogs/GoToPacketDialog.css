@@ -2,7 +2,8 @@
 .dialog-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -11,11 +12,11 @@
 
 .dialog {
   background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
-  border-radius: 12px;
-  padding: 20px;
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-xl);
+  padding: 24px;
   min-width: 320px;
-  box-shadow: 0 8px 32px var(--shadow-color);
+  box-shadow: var(--shadow-xl);
 }
 
 .dialog h3 {
@@ -27,19 +28,21 @@
 
 .dialog-input {
   width: 100%;
-  padding: 10px 12px;
+  padding: 12px 14px;
   background: var(--bg-primary);
-  border: 1px solid var(--border-primary);
-  border-radius: 6px;
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-md);
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: 14px;
   outline: none;
   margin-bottom: 16px;
+  transition: all var(--transition);
 }
 
 .dialog-input:focus {
   border-color: var(--accent-blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-blue) 12%, transparent);
 }
 
 .dialog-input::placeholder {
@@ -53,12 +56,12 @@
 }
 
 .dialog-button {
-  padding: 8px 16px;
-  border-radius: 6px;
+  padding: 9px 20px;
+  border-radius: 20px;
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--transition);
 }
 
 .dialog-button.secondary {
@@ -79,5 +82,5 @@
 }
 
 .dialog-button.primary:hover {
-  filter: brightness(1.1);
+  opacity: 0.9;
 }
