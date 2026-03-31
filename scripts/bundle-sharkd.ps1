@@ -26,10 +26,8 @@ $AliasMap = @{
     "libgmodule-2.0-0.dll"  = @("gmodule-2.0-0.dll")
     "libgthread-2.0-0.dll"  = @("gthread-2.0-0.dll")
     "libpcre2-8-0.dll"      = @("pcre2-8.dll")
-    "libcares-2.dll"        = @("cares.dll")
     "liblzma-5.dll"         = @("liblzma.dll")
     "libbrotlicommon.dll"   = @("brotlicommon.dll")
-    "libbrotlidec.dll"      = @("brotlidec.dll")
     "libsnappy.dll"         = @("snappy.dll")
     "libzstd.dll"           = @("zstd.dll")
     "liblz4.dll"            = @("lz4.dll")
@@ -147,6 +145,30 @@ function Find-Dependency {
     return $null
 }
 
+function Find-DependencyDeep {
+    param(
+        [string]$DllName,
+        [string[]]$SearchRoots
+    )
+
+    $candidateNames = @($DllName)
+    if ($AliasMap.ContainsKey($DllName)) {
+        $candidateNames += $AliasMap[$DllName]
+    }
+    $candidateNames = $candidateNames | Select-Object -Unique
+
+    foreach ($name in $candidateNames) {
+        foreach ($root in $SearchRoots) {
+            $match = Get-ChildItem -Path $root -Filter $name -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($match) {
+                return @{ Source = $match.FullName; DestName = $DllName }
+            }
+        }
+    }
+
+    return $null
+}
+
 function New-AliasCopiesInOutput {
     param([string]$Dir)
 
@@ -200,15 +222,60 @@ if (-not $WiresharkDir) {
 Write-Host "Using sharkd: $SharkdPath"
 Write-Host "Using Wireshark dir: $WiresharkDir"
 
+$RuntimePathDirs = @()
+if ($env:PATH) {
+    $RuntimePathDirs = @(
+        $env:PATH -split ';' |
+            Where-Object {
+                $_ -and
+                (Test-Path $_) -and
+                ($_ -match '(?i)(msys|mingw|ucrt|wireshark)')
+            }
+    ) | Select-Object -Unique
+}
+
 $SearchDirs = @(
     $WiresharkDir,
+    (Join-Path $WiresharkDir "bin"),
     "C:\wireshark-src\build\run",
+    "C:\wireshark-src\build\run\RelWithDebInfo",
+    "C:\wireshark-src\build\run\Debug",
+    "C:\wireshark-src\build\run\Release",
+    "C:\wireshark-src\build\run\lib",
+    "C:\wireshark-src\build\run\deps",
     "C:\mingw64\bin",
     "C:\ucrt64\bin",
     "C:\msys64\ucrt64\bin",
     "C:\msys64\mingw64\bin",
-    "C:\msys64\usr\bin"
+    "C:\msys64\usr\bin",
+    "D:\a\_temp\msys64\ucrt64\bin",
+    "D:\a\_temp\msys64\mingw64\bin",
+    "D:\a\_temp\msys64\usr\bin",
+    "D:\a\_temp\msys64\clang64\bin"
 ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
+
+$DeepSearchRoots = @(
+    "C:\wireshark-src",
+    "C:\msys64",
+    "C:\mingw64",
+    "C:\ucrt64",
+    "D:\a\_temp\msys64"
+) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
+
+if ($RuntimePathDirs.Count -gt 0) {
+    $SearchDirs = @($SearchDirs + $RuntimePathDirs) | Select-Object -Unique
+    $DeepSearchRoots = @($DeepSearchRoots + $RuntimePathDirs) | Select-Object -Unique
+}
+
+Write-Host "Dependency search directories ($($SearchDirs.Count)):"
+foreach ($dir in $SearchDirs) {
+    Write-Host "  $dir"
+}
+
+Write-Host "Deep search roots ($($DeepSearchRoots.Count)):"
+foreach ($root in $DeepSearchRoots) {
+    Write-Host "  $root"
+}
 
 # Create output directories.
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
@@ -284,6 +351,23 @@ if ($InitialDlls.Count -gt 0) {
                 $destPath = Join-Path $OutputDir $_.Name
                 if (-not (Test-Path $destPath)) {
                     Copy-Item $_.FullName $destPath -Force
+                }
+            }
+        }
+
+        New-AliasCopiesInOutput -Dir $OutputDir
+
+        # Targeted deep search for any still-missing names across full source/runtime roots.
+        if ($DeepSearchRoots.Count -gt 0) {
+            foreach ($dll in @($MissingDlls)) {
+                if (Test-Path (Join-Path $OutputDir $dll)) {
+                    continue
+                }
+
+                $deepDep = Find-DependencyDeep -DllName $dll -SearchRoots $DeepSearchRoots
+                if ($deepDep) {
+                    Copy-Item $deepDep.Source (Join-Path $OutputDir $deepDep.DestName) -Force
+                    $CopiedDlls.Add($dll) | Out-Null
                 }
             }
         }

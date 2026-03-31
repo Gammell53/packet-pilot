@@ -298,10 +298,6 @@ fn apply_ai_sidecar_env(
     }
 }
 
-/// Spawn the Python sidecar process (legacy, no config)
-pub fn spawn_python_sidecar() -> Result<u16, String> {
-    spawn_python_sidecar_with_config("openrouter".to_string(), None, None, None)
-}
 
 /// Stop the Python sidecar process
 pub fn stop_python_sidecar() -> Result<(), String> {

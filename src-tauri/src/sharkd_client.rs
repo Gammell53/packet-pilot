@@ -153,25 +153,6 @@ pub struct Endpoint {
     pub filter: Option<String>,
 }
 
-/// Tap result item
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TapResultItem {
-    /// Tap name
-    pub tap: String,
-    /// Tap type
-    #[serde(rename = "type")]
-    pub tap_type: String,
-    /// Protocol hierarchy (for phs tap)
-    #[serde(default)]
-    pub proto: Vec<ProtocolNode>,
-    /// Conversations (for conv tap)
-    #[serde(default)]
-    pub convs: Vec<Conversation>,
-    /// Endpoints (for host tap)
-    #[serde(default)]
-    pub hosts: Vec<Endpoint>,
-}
-
 /// Complete capture statistics
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CaptureStats {
@@ -624,16 +605,6 @@ impl SharkdClient {
         Err("Failed to verify sharkd is working".to_string())
     }
 
-    /// Read a raw line from stdout
-    fn read_line(&self) -> Result<String, String> {
-        let mut stdout = self.stdout.lock();
-        let mut line = String::new();
-        stdout
-            .read_line(&mut line)
-            .map_err(|e| format!("Failed to read from sharkd: {}", e))?;
-        Ok(line)
-    }
-
     /// Send a JSON-RPC request and return the result
     fn send_request(&self, method: &str, params: Option<Value>) -> Result<Value, String> {
         let id = self.request_id.fetch_add(1, Ordering::SeqCst);
@@ -654,7 +625,7 @@ impl SharkdClient {
         };
 
         // CRITICAL: sharkd requires newline-delimited JSON
-        let request_str = format!("{}\n", request.to_string());
+        let request_str = format!("{request}\n");
 
         {
             let mut stdin = self.stdin.lock();
@@ -747,17 +718,6 @@ impl SharkdClient {
             Some(json!({
                 "frame": frame_num,
                 "proto": true,
-                "bytes": true
-            })),
-        )
-    }
-
-    /// Get the hex dump of a specific frame
-    pub fn frame_bytes(&self, frame_num: u32) -> Result<Value, String> {
-        self.send_request(
-            "frame",
-            Some(json!({
-                "frame": frame_num,
                 "bytes": true
             })),
         )
@@ -889,36 +849,4 @@ impl SharkdClient {
         })
     }
 
-    /// Extract protocol hierarchy from tap result
-    fn extract_protocol_hierarchy(result: &Value) -> Vec<ProtocolNode> {
-        result
-            .get("taps")
-            .and_then(|taps| taps.as_array())
-            .and_then(|arr| arr.first())
-            .and_then(|tap| tap.get("proto"))
-            .and_then(|proto| serde_json::from_value(proto.clone()).ok())
-            .unwrap_or_default()
-    }
-
-    /// Extract conversations from tap result
-    fn extract_conversations(result: &Value) -> Vec<Conversation> {
-        result
-            .get("taps")
-            .and_then(|taps| taps.as_array())
-            .and_then(|arr| arr.first())
-            .and_then(|tap| tap.get("convs"))
-            .and_then(|convs| serde_json::from_value(convs.clone()).ok())
-            .unwrap_or_default()
-    }
-
-    /// Extract endpoints from tap result
-    fn extract_endpoints(result: &Value) -> Vec<Endpoint> {
-        result
-            .get("taps")
-            .and_then(|taps| taps.as_array())
-            .and_then(|arr| arr.first())
-            .and_then(|tap| tap.get("hosts"))
-            .and_then(|hosts| serde_json::from_value(hosts.clone()).ok())
-            .unwrap_or_default()
-    }
 }
