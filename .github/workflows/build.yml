@@ -137,15 +137,24 @@ jobs:
           $ErrorActionPreference = "Stop"
           $BundleDir = "resources/sharkd"
           $Sharkd = Join-Path $BundleDir "sharkd-x86_64-pc-windows-msvc.exe"
-          $Objdump = "C:\msys64\ucrt64\bin\objdump.exe"
 
           if (-not (Test-Path $Sharkd)) {
             throw "Missing bundled sharkd executable: $Sharkd"
           }
 
-          if (-not (Test-Path $Objdump)) {
-            throw "objdump not found at $Objdump"
+          $ObjdumpCandidates = @(
+            "C:\msys64\ucrt64\bin\objdump.exe",
+            "D:\msys64\ucrt64\bin\objdump.exe",
+            "$env:RUNNER_TEMP\..\msys64\ucrt64\bin\objdump.exe"
+          )
+          $Objdump = $ObjdumpCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $Objdump) {
+            $Objdump = (Get-Command objdump.exe -ErrorAction SilentlyContinue).Source
           }
+          if (-not $Objdump) {
+            throw "objdump not found at any known path"
+          }
+          Write-Host "Using objdump: $Objdump"
 
           $SystemDllRegex = '^(api-ms-win-|KERNEL32\.dll$|ADVAPI32\.dll$|IPHLPAPI\.dll$|SHELL32\.dll$|USER32\.dll$|OLE32\.dll$|OLEAUT32\.dll$|SECUR32\.dll$|CRYPT32\.dll$|BCRYPT\.dll$|WS2_32\.dll$|WSOCK32\.dll$|NTDLL\.dll$|UCRTBASE\.dll$|VCRUNTIME140(_1)?\.dll$|MSVCP140\.dll$)'
           $Imports = & $Objdump -p $Sharkd 2>$null |
