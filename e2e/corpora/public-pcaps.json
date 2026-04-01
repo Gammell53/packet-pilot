@@ -90,7 +90,7 @@
       ],
       "query": "What anomaly is visible in this capture?",
       "requiredFacts": ["ARP"],
-      "requiredPatterns": ["(?:storm|many|repeated|burst).{0,20}(?:arp|request)"]
+      "requiredPatterns": ["(?:storm|flood|many|repeated|burst|frequency|scanning|sweep|rapid|aggressive).{0,40}(?:arp|request|probe)"]
     },
     "slammer-worm": {
       "title": "Slammer Worm Traffic",
