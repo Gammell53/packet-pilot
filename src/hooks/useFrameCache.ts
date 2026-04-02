@@ -9,6 +9,7 @@ export interface FrameCacheConfig {
   chunkSize?: number;
   prefetchDistance?: number;
   filter?: string;
+  totalFrames?: number;
 }
 
 export interface FrameCacheStats {
@@ -33,6 +34,7 @@ export function useFrameCache(config: FrameCacheConfig = {}): UseFrameCacheRetur
     chunkSize = 500,
     prefetchDistance = 500,
     filter = "",
+    totalFrames = 0,
   } = config;
 
   const cacheRef = useRef<FrameLRUCache | null>(null);
@@ -88,43 +90,49 @@ export function useFrameCache(config: FrameCacheConfig = {}): UseFrameCacheRetur
 
   const ensureRange = useCallback(
     (startFrame: number, endFrame: number): void => {
-      if (startFrame < 1 || endFrame < startFrame) {
+      if (totalFrames === 0 || startFrame < 1 || endFrame < startFrame) {
         return;
       }
 
       const expandedStart = Math.max(1, startFrame - prefetchDistance);
-      const expandedEnd = endFrame + prefetchDistance;
+      const expandedEnd = Math.min(totalFrames, endFrame + prefetchDistance);
       const chunks = alignToChunks(expandedStart, expandedEnd);
 
       for (const [chunkStart, chunkEnd] of chunks) {
-        if (cache.hasRange(chunkStart + 1, chunkEnd)) {
+        const rangeStart = chunkStart + 1;
+        const rangeEnd = Math.min(chunkEnd, totalFrames);
+        if (rangeEnd < rangeStart) {
           continue;
         }
 
-        if (requestManager.isRangePending(chunkStart, chunkEnd)) {
+        if (cache.hasRange(rangeStart, rangeEnd)) {
+          continue;
+        }
+
+        if (requestManager.isRangePending(rangeStart, rangeEnd)) {
           continue;
         }
 
         const skip = chunkStart;
-        const limit = chunkEnd - chunkStart;
+        const limit = rangeEnd - chunkStart;
 
-        requestManager.request(chunkStart, chunkEnd, async () => {
-          if (requestManager.isCancelled(chunkStart, chunkEnd)) {
+        requestManager.request(rangeStart, rangeEnd, async () => {
+          if (requestManager.isCancelled(rangeStart, rangeEnd)) {
             return [];
           }
 
           const frames = await fetchFrames(skip, limit);
-          if (requestManager.isCancelled(chunkStart, chunkEnd)) {
+          if (requestManager.isCancelled(rangeStart, rangeEnd)) {
             return [];
           }
 
-          cache.setMany(frames);
+          cache.setRange(rangeStart, frames);
           triggerUpdate();
           return frames;
         });
       }
     },
-    [alignToChunks, cache, fetchFrames, prefetchDistance, requestManager, triggerUpdate],
+    [alignToChunks, cache, fetchFrames, prefetchDistance, requestManager, totalFrames, triggerUpdate],
   );
 
   const clear = useCallback(() => {

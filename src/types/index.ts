@@ -112,7 +112,7 @@ export interface ColumnWidths {
 // ============================================
 
 export interface PacketGridRef {
-  scrollToFrame: (frameNumber: number) => void;
+  scrollToRow: (rowNumber: number) => void;
 }
 
 export type Theme = "dark" | "light";

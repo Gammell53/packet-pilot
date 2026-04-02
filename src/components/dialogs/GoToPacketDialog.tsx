@@ -3,12 +3,14 @@ import "./GoToPacketDialog.css";
 
 interface GoToPacketDialogProps {
   totalFrames: number;
+  hasActiveFilter: boolean;
   onGoTo: (packetNum: number) => void;
   onClose: () => void;
 }
 
 export function GoToPacketDialog({
   totalFrames,
+  hasActiveFilter,
   onGoTo,
   onClose,
 }: GoToPacketDialogProps) {
@@ -30,11 +32,15 @@ export function GoToPacketDialog({
   return (
     <div className="dialog-overlay" onClick={onClose}>
       <div className="dialog" onClick={(e) => e.stopPropagation()}>
-        <h3>Go to Packet</h3>
+        <h3>{hasActiveFilter ? "Go to Match" : "Go to Packet"}</h3>
         <input
           type="number"
           className="dialog-input"
-          placeholder={`Enter packet number (1-${totalFrames.toLocaleString()})`}
+          placeholder={
+            hasActiveFilter
+              ? `Enter match number (1-${totalFrames.toLocaleString()})`
+              : `Enter packet number (1-${totalFrames.toLocaleString()})`
+          }
           value={packetNum}
           onChange={(e) => setPacketNum(e.target.value)}
           onKeyDown={handleKeyDown}

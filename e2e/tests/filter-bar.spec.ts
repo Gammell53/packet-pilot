@@ -61,6 +61,45 @@ test.describe("Filter Bar", () => {
     await expect(page.locator(".filter-error")).not.toBeVisible();
   });
 
+  test("filtered rows keep their real frame numbers", async ({ loadedPage: page }) => {
+    await page.locator(".filter-input").fill("http");
+    await page.click(".filter-apply");
+
+    const firstRow = page.locator(".packet-row").first();
+    const secondRow = page.locator(".packet-row").nth(1);
+
+    await expect(firstRow.locator(".col-no")).toHaveText("6");
+    await expect(secondRow.locator(".col-no")).toHaveText("7");
+  });
+
+  test("invalid filters keep the previous applied results visible", async ({ loadedPage: page }) => {
+    const firstRow = page.locator(".packet-row").first();
+
+    await page.locator(".filter-input").fill("http");
+    await page.click(".filter-apply");
+    await expect(firstRow.locator(".col-no")).toHaveText("6");
+
+    await page.locator(".filter-input").fill("invalid!!!syntax");
+    await page.click(".filter-apply");
+
+    await expect(page.locator(".filter-error")).toContainText("Invalid filter syntax");
+    await expect(firstRow.locator(".col-no")).toHaveText("6");
+  });
+
+  test("go to dialog targets filtered match positions", async ({ loadedPage: page }) => {
+    await page.locator(".filter-input").fill("http");
+    await page.click(".filter-apply");
+
+    await page.click('[title="Go to packet (Ctrl+G)"]');
+    await expect(page.locator(".dialog h3")).toHaveText("Go to Match");
+    await expect(page.locator(".dialog-input")).toHaveAttribute("placeholder", "Enter match number (1-2)");
+
+    await page.locator(".dialog-input").fill("2");
+    await page.locator(".dialog-input").press("Enter");
+
+    await expect(page.locator(".selected-info")).toContainText("Packet 7 (match 2 of 2)");
+  });
+
   test("GoTo button opens dialog", async ({ loadedPage: page }) => {
     await page.click('[title="Go to packet (Ctrl+G)"]');
     await expect(page.locator(".dialog-overlay")).toBeVisible();

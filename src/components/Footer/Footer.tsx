@@ -2,7 +2,10 @@ import "./Footer.css";
 
 interface FooterProps {
   isReady: boolean;
-  selectedFrame: number | null;
+  hasCaptureLoaded: boolean;
+  isFiltered: boolean;
+  selectedRow: number | null;
+  selectedFrameNumber: number | null;
   totalFrames: number;
   avgPacketRate?: number;
   aiState?: "running" | "starting" | "offline" | "unconfigured";
@@ -10,7 +13,10 @@ interface FooterProps {
 
 export function Footer({
   isReady,
-  selectedFrame,
+  hasCaptureLoaded,
+  isFiltered,
+  selectedRow,
+  selectedFrameNumber,
   totalFrames,
   avgPacketRate,
   aiState,
@@ -29,10 +35,12 @@ export function Footer({
         )}
       </div>
       <div className="footer-center">
-        {selectedFrame && (
+        {selectedFrameNumber !== null && (
           <span className="selected-info">
-            Packet {selectedFrame.toLocaleString()} of{" "}
-            {totalFrames.toLocaleString()}
+            Packet {selectedFrameNumber.toLocaleString()}
+            {isFiltered && selectedRow !== null
+              ? ` (match ${selectedRow.toLocaleString()} of ${totalFrames.toLocaleString()})`
+              : ` of ${totalFrames.toLocaleString()}`}
           </span>
         )}
       </div>
@@ -43,9 +51,9 @@ export function Footer({
             {aiState === "running" ? "AI Ready" : aiState === "starting" ? "AI Starting..." : "AI Offline"}
           </span>
         )}
-        {totalFrames > 0 && (
+        {hasCaptureLoaded && (
           <span className="packet-count">
-            {totalFrames.toLocaleString()} packets
+            {totalFrames.toLocaleString()} {isFiltered ? "matching packets" : "packets"}
           </span>
         )}
         <span className="shortcuts-hint">

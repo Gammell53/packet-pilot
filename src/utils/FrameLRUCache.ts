@@ -72,6 +72,21 @@ export class FrameLRUCache {
   }
 
   /**
+   * Add a contiguous result window keyed by visible row position.
+   */
+  setRange(startKey: number, frames: FrameData[]): void {
+    frames.forEach((frame, index) => {
+      const key = startKey + index;
+      if (this.cache.has(key)) {
+        this.cache.delete(key);
+      }
+      this.cache.set(key, frame);
+    });
+
+    this.evictIfNeeded();
+  }
+
+  /**
    * Check which frame numbers in a range are missing from cache.
    */
   getMissingInRange(startFrame: number, endFrame: number): number[] {

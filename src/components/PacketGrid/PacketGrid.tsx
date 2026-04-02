@@ -4,15 +4,17 @@ import "./PacketGrid.css";
 
 interface PacketGridProps {
   /** Get a frame by number from cache */
-  getFrame: (frameNumber: number) => FrameData | undefined;
+  getFrame: (rowNumber: number) => FrameData | undefined;
   /** Ensure a range of frames is loaded */
-  ensureRange: (startFrame: number, endFrame: number) => void;
+  ensureRange: (startRow: number, endRow: number) => void;
   /** Cancel pending requests (for fast scrolling) */
   cancelPending: () => void;
   totalFrames: number;
+  hasCaptureLoaded: boolean;
+  isFiltered: boolean;
   isLoading: boolean;
-  selectedFrame: number | null;
-  onSelectFrame: (frameNumber: number) => void;
+  selectedRow: number | null;
+  onSelectRow: (rowNumber: number) => void;
   onContextMenu?: (e: React.MouseEvent, frame: FrameData) => void;
   /** Called when the visible range changes */
   onVisibleRangeChange?: (start: number, end: number) => void;
@@ -32,9 +34,11 @@ export const PacketGrid = forwardRef<PacketGridRef, PacketGridProps>(({
   ensureRange,
   cancelPending,
   totalFrames,
+  hasCaptureLoaded,
+  isFiltered,
   isLoading: _isLoading, // Reserved for future loading indicator
-  selectedFrame,
-  onSelectFrame,
+  selectedRow,
+  onSelectRow,
   onContextMenu,
   onVisibleRangeChange,
 }, ref) => {
@@ -110,10 +114,10 @@ export const PacketGrid = forwardRef<PacketGridRef, PacketGridProps>(({
     document.addEventListener("mouseup", onMouseUp);
   };
 
-  // Expose scrollToFrame method via ref
+  // Expose scrollToRow method via ref
   useImperativeHandle(ref, () => ({
-    scrollToFrame: (frameNumber: number) => {
-      const index = frameNumber - 1;
+    scrollToRow: (rowNumber: number) => {
+      const index = rowNumber - 1;
       if (index >= 0 && index < totalFrames && containerRef.current) {
         const targetScroll = rowIndexToScroll(index) - containerHeight / 2 + ROW_HEIGHT / 2;
         containerRef.current.scrollTop = Math.max(0, Math.min(virtualHeight - containerHeight, targetScroll));
@@ -204,6 +208,15 @@ export const PacketGrid = forwardRef<PacketGridRef, PacketGridProps>(({
   // Initial load is now handled by the debounced effect above
 
   if (totalFrames === 0) {
+    const title =
+      !hasCaptureLoaded ? "No capture loaded"
+      : isFiltered ? "No packets match the current filter"
+      : "No packets available";
+    const description =
+      !hasCaptureLoaded ? "Open a PCAP file to start analyzing packets"
+      : isFiltered ? "Clear or change the display filter to see packets."
+      : "This capture does not contain any packets.";
+
     return (
       <div className="packet-grid-empty">
         <div className="empty-state">
@@ -214,9 +227,11 @@ export const PacketGrid = forwardRef<PacketGridRef, PacketGridProps>(({
             <line x1="16" y1="17" x2="8" y2="17"/>
             <line x1="10" y1="9" x2="8" y2="9"/>
           </svg>
-          <h3>No capture loaded</h3>
-          <p>Open a PCAP file to start analyzing packets</p>
-          <p className="shortcut-hint">Press <kbd>Ctrl</kbd>+<kbd>O</kbd> to open a file</p>
+          <h3>{title}</h3>
+          <p>{description}</p>
+          {!hasCaptureLoaded && (
+            <p className="shortcut-hint">Press <kbd>Ctrl</kbd>+<kbd>O</kbd> to open a file</p>
+          )}
         </div>
       </div>
     );
@@ -262,9 +277,9 @@ export const PacketGrid = forwardRef<PacketGridRef, PacketGridProps>(({
         {/* Virtual scroll spacer */}
         <div style={{ height: virtualHeight, width: '100%', position: 'relative' }}>
           {visibleRows.map((rowIndex) => {
-            const frameNumber = rowIndex + 1;
-            const frame = getFrame(frameNumber);
-            const isSelected = selectedFrame === frameNumber;
+            const rowNumber = rowIndex + 1;
+            const frame = getFrame(rowNumber);
+            const isSelected = selectedRow === rowNumber;
 
             // Calculate position
             let rowTop: number;
@@ -298,18 +313,18 @@ export const PacketGrid = forwardRef<PacketGridRef, PacketGridProps>(({
                   backgroundColor: isSelected ? undefined : bgColor,
                   color: isSelected ? undefined : fgColor,
                 }}
-                onClick={() => onSelectFrame(frameNumber)}
+                onClick={() => onSelectRow(rowNumber)}
                 onContextMenu={(e) => {
                   if (frame) {
-                    onSelectFrame(frameNumber);
+                    onSelectRow(rowNumber);
                     onContextMenu?.(e, frame);
                   }
                 }}
                 onDoubleClick={() => {
-                  onSelectFrame(frameNumber);
+                  onSelectRow(rowNumber);
                 }}
               >
-                <div className="col-no" style={{ width: columnWidths.no }}>{frameNumber.toLocaleString()}</div>
+                <div className="col-no" style={{ width: columnWidths.no }}>{frame ? frame.number.toLocaleString() : "..."}</div>
                 <div className="col-time" style={{ width: columnWidths.time }}>{frame?.time || "..."}</div>
                 <div className="col-source" style={{ width: columnWidths.source }}>{frame?.source || "..."}</div>
                 <div className="col-dest" style={{ width: columnWidths.dest }}>{frame?.destination || "..."}</div>

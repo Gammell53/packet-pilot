@@ -63,8 +63,10 @@ function App() {
   const [localTotalFrames, setLocalTotalFrames] = useState(0);
   const [hasLocalTotal, setHasLocalTotal] = useState(false);
   const [localIsLoading, setLocalIsLoading] = useState(false);
-  const [selectedFrame, setSelectedFrame] = useState<number | null>(null);
-  const [filter, setFilter] = useState("");
+  const [selectedRow, setSelectedRow] = useState<number | null>(null);
+  const [selectedFrameNumber, setSelectedFrameNumber] = useState<number | null>(null);
+  const [draftFilter, setDraftFilter] = useState("");
+  const [appliedFilter, setAppliedFilter] = useState("");
   const [filterError, setFilterError] = useState<string | null>(null);
   const [showDetailPane, setShowDetailPane] = useState(true);
   const [detailPaneHeight, setDetailPaneHeight] = useState(250);
@@ -78,6 +80,8 @@ function App() {
 
   const effectiveTotalFrames = hasLocalTotal ? localTotalFrames : totalFrames;
   const effectiveIsLoading = localIsLoading || isLoading;
+  const hasCaptureLoaded = Boolean(fileName) || totalFrames > 0;
+  const isFilterActive = appliedFilter.length > 0;
   const gridRef = useRef<PacketGridRef | null>(null);
   const isFileLoadingRef = useRef(false);
   const startupCaptureAttemptedRef = useRef(false);
@@ -109,8 +113,33 @@ function App() {
     maxSize: 50000,
     chunkSize,
     prefetchDistance: 500,
-    filter,
+    filter: appliedFilter,
+    totalFrames: effectiveTotalFrames,
   });
+
+  const clearSelection = useCallback(() => {
+    setSelectedRow(null);
+    setSelectedFrameNumber(null);
+  }, []);
+
+  const selectVisibleRow = useCallback((rowNumber: number) => {
+    setSelectedRow(rowNumber);
+    const frame = getFrame(rowNumber);
+    setSelectedFrameNumber(frame?.number ?? null);
+  }, [getFrame]);
+
+  useEffect(() => {
+    if (selectedRow === null) {
+      return;
+    }
+
+    const frame = getFrame(selectedRow);
+    if (!frame) {
+      return;
+    }
+
+    setSelectedFrameNumber((current) => (current === frame.number ? current : frame.number));
+  }, [getFrame, selectedRow]);
 
   const loadCapturePath = useCallback(async (path: string) => {
     if (isFileLoadingRef.current) {
@@ -125,9 +154,10 @@ function App() {
       cancelPending();
       setLocalTotalFrames(0);
       setHasLocalTotal(false);
-      setFilter("");
+      setDraftFilter("");
+      setAppliedFilter("");
       setFilterError(null);
-      setSelectedFrame(null);
+      clearSelection();
 
       const success = await loadFile(path);
       const t1 = performance.now();
@@ -140,7 +170,7 @@ function App() {
       isFileLoadingRef.current = false;
       setLocalIsLoading(false);
     }
-  }, [cancelPending, clearCache, loadFile]);
+  }, [cancelPending, clearCache, clearSelection, loadFile]);
 
   const handleOpenFile = useCallback(async () => {
     if (isFileLoadingRef.current) {
@@ -187,58 +217,58 @@ function App() {
     };
   }, [sharkdReady, loadCapturePath]);
 
-  const handleApplyFilter = useCallback(async () => {
+  const applyFilterText = useCallback(async (nextFilter: string) => {
     if (isFileLoadingRef.current) {
-      return;
+      return false;
     }
 
+    const normalizedFilter = nextFilter.trim();
+    setDraftFilter(nextFilter);
+
     try {
+      if (normalizedFilter && normalizedFilter !== appliedFilter) {
+        const isValid = await desktop.sharkd.checkFilter(normalizedFilter);
+        if (!isValid) {
+          setFilterError("Invalid filter syntax");
+          return false;
+        }
+      }
+
       setLocalIsLoading(true);
       clearCache();
       cancelPending();
-      setSelectedFrame(null);
-
-      if (!filter.trim()) {
-        setFilterError(null);
-        const total = await desktop.sharkd.applyFilter("");
-        setLocalTotalFrames(total);
-        setHasLocalTotal(true);
-        return;
-      }
-
-      const isValid = await desktop.sharkd.checkFilter(filter);
-      if (!isValid) {
-        setFilterError("Invalid filter syntax");
-        return;
-      }
-
+      clearSelection();
       setFilterError(null);
-      const total = await desktop.sharkd.applyFilter(filter);
+      const total = await desktop.sharkd.applyFilter(normalizedFilter);
+      setDraftFilter(normalizedFilter);
+      setAppliedFilter(normalizedFilter);
       setLocalTotalFrames(total);
       setHasLocalTotal(true);
+      return true;
     } catch (error) {
       setFilterError(`Filter error: ${error instanceof Error ? error.message : String(error)}`);
+      return false;
     } finally {
       setLocalIsLoading(false);
     }
-  }, [cancelPending, clearCache, filter]);
+  }, [appliedFilter, cancelPending, clearCache, clearSelection]);
+
+  const handleApplyFilter = useCallback(() => {
+    void applyFilterText(draftFilter);
+  }, [applyFilterText, draftFilter]);
 
   const handleClearFilter = useCallback(() => {
-    setFilter("");
-    setTimeout(() => {
-      void handleApplyFilter();
-    }, 0);
-  }, [handleApplyFilter]);
+    void applyFilterText("");
+  }, [applyFilterText]);
 
-  const handleGoToPacket = useCallback(
-    (packetNum: number) => {
-      if (packetNum >= 1 && packetNum <= effectiveTotalFrames) {
-        setSelectedFrame(packetNum);
-        gridRef.current?.scrollToFrame(packetNum);
-      }
-    },
-    [effectiveTotalFrames],
-  );
+  const handleGoToVisibleRow = useCallback((rowNumber: number) => {
+    if (rowNumber < 1 || rowNumber > effectiveTotalFrames) {
+      return;
+    }
+
+    selectVisibleRow(rowNumber);
+    gridRef.current?.scrollToRow(rowNumber);
+  }, [effectiveTotalFrames, selectVisibleRow]);
 
   const handleContextMenu = useCallback((event: React.MouseEvent, frame: FrameData) => {
     event.preventDefault();
@@ -256,19 +286,16 @@ function App() {
       if (type === "dest") nextFilter = `ip.dst == ${value}`;
       if (type === "proto") nextFilter = value.toLowerCase();
 
-      setFilter(nextFilter);
-      setTimeout(() => {
-        void handleApplyFilter();
-      }, 0);
+      void applyFilterText(nextFilter);
     },
-    [handleApplyFilter],
+    [applyFilterText],
   );
 
   useKeyboardShortcuts({
-    selectedFrame,
+    selectedFrame: selectedRow,
     totalFrames: effectiveTotalFrames,
     gridRef,
-    onSelectFrame: setSelectedFrame,
+    onSelectFrame: selectVisibleRow,
     onOpenFile: handleOpenFile,
     onGoToPacket: () => setShowGoToDialog(true),
     onToggleDetailPane: () => setShowDetailPane((previous) => !previous),
@@ -278,6 +305,43 @@ function App() {
     },
     onOpenChat: () => setShowChatSidebar((prev) => !prev),
   });
+
+  const findVisibleRowForFrame = useCallback(async (frameNumber: number): Promise<number | null> => {
+    if (frameNumber < 1) {
+      return null;
+    }
+
+    if (!appliedFilter) {
+      return frameNumber <= effectiveTotalFrames ? frameNumber : null;
+    }
+
+    const pageSize = 200;
+    for (let skip = 0; skip < effectiveTotalFrames; skip += pageSize) {
+      const limit = Math.min(pageSize, effectiveTotalFrames - skip);
+      const result = await desktop.sharkd.getFrames(skip, limit, appliedFilter);
+      const index = result.frames.findIndex((frame) => frame.number === frameNumber);
+      if (index !== -1) {
+        return skip + index + 1;
+      }
+    }
+
+    return null;
+  }, [appliedFilter, effectiveTotalFrames]);
+
+  const handleGoToPacket = useCallback((packetNum: number) => {
+    void (async () => {
+      try {
+        const rowNumber = await findVisibleRowForFrame(packetNum);
+        if (rowNumber === null) {
+          return;
+        }
+
+        handleGoToVisibleRow(rowNumber);
+      } catch (error) {
+        console.error("Failed to locate packet in current result set:", error);
+      }
+    })();
+  }, [findVisibleRowForFrame, handleGoToVisibleRow]);
 
   const handleDetailPaneResize = useCallback(
     (event: React.MouseEvent) => {
@@ -340,9 +404,9 @@ function App() {
 
       {totalFrames > 0 && (
         <FilterBar
-          filter={filter}
+          filter={draftFilter}
           filterError={filterError}
-          onFilterChange={setFilter}
+          onFilterChange={setDraftFilter}
           onApplyFilter={handleApplyFilter}
           onClearFilter={handleClearFilter}
           onGoToPacket={() => setShowGoToDialog(true)}
@@ -424,7 +488,7 @@ function App() {
           className="packet-list-container"
           style={{
             flex:
-              showDetailPane && selectedFrame
+              showDetailPane && selectedFrameNumber
                 ? `1 1 calc(100% - ${detailPaneHeight}px)`
                 : "1 1 100%",
           }}
@@ -435,25 +499,30 @@ function App() {
             ensureRange={ensureRange}
             cancelPending={cancelPending}
             totalFrames={effectiveTotalFrames}
+            hasCaptureLoaded={hasCaptureLoaded}
+            isFiltered={isFilterActive}
             isLoading={effectiveIsLoading}
-            selectedFrame={selectedFrame}
-            onSelectFrame={setSelectedFrame}
+            selectedRow={selectedRow}
+            onSelectRow={selectVisibleRow}
             onContextMenu={handleContextMenu}
             onVisibleRangeChange={handleVisibleRangeChange}
           />
         </div>
 
-        {showDetailPane && selectedFrame && (
+        {showDetailPane && selectedFrameNumber && (
           <div className="detail-pane-container" style={{ height: detailPaneHeight }}>
             <div className="resize-handle" onMouseDown={handleDetailPaneResize} />
-            <PacketDetailPane frameNumber={selectedFrame} />
+            <PacketDetailPane frameNumber={selectedFrameNumber} />
           </div>
         )}
       </main>
 
       <Footer
         isReady={sharkdReady}
-        selectedFrame={selectedFrame}
+        hasCaptureLoaded={hasCaptureLoaded}
+        isFiltered={isFilterActive}
+        selectedRow={selectedRow}
+        selectedFrameNumber={selectedFrameNumber}
         totalFrames={effectiveTotalFrames}
         avgPacketRate={avgPacketRate}
         aiState={aiState}
@@ -493,7 +562,8 @@ function App() {
       {showGoToDialog && (
         <GoToPacketDialog
           totalFrames={effectiveTotalFrames}
-          onGoTo={handleGoToPacket}
+          hasActiveFilter={isFilterActive}
+          onGoTo={handleGoToVisibleRow}
           onClose={() => setShowGoToDialog(false)}
         />
       )}
@@ -510,17 +580,12 @@ function App() {
           <ChatSidebar
             isOpen={showChatSidebar}
             onClose={() => setShowChatSidebar(false)}
-            selectedFrame={selectedFrame}
+            selectedFrame={selectedFrameNumber}
             visibleRange={visibleRange}
-            currentFilter={filter}
+            currentFilter={appliedFilter}
             fileName={fileName}
             totalFrames={effectiveTotalFrames}
-            onApplyFilter={(nextFilter) => {
-              setFilter(nextFilter);
-              setTimeout(() => {
-                void handleApplyFilter();
-              }, 0);
-            }}
+            onApplyFilter={(nextFilter) => void applyFilterText(nextFilter)}
             onGoToPacket={handleGoToPacket}
           />
         </Suspense>

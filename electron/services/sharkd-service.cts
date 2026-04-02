@@ -310,8 +310,16 @@ class SharkdService extends EventEmitter {
 
   async checkFilter(filter: string): Promise<boolean> {
     await this.initIfNeeded();
-    const result = await this.sendRequest("check", { filter });
-    return this.asObject(result).err === undefined;
+    try {
+      const result = await this.sendRequest("check", { filter });
+      return this.asObject(result).err === undefined;
+    } catch (error) {
+      if (this.isInvalidFilterError(error)) {
+        return false;
+      }
+
+      throw error;
+    }
   }
 
   async applyFilter(filter: string): Promise<number> {
@@ -662,6 +670,14 @@ class SharkdService extends EventEmitter {
   private isInfoMessage(message: string): boolean {
     // sharkd 4.x writes informational diagnostics to stderr that are not errors
     return /^(Hello in child\.|load: filename=|Running as user|sharkd_session_process_tap\(\))/.test(message);
+  }
+
+  private isInvalidFilterError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    return /Sharkd error -5001: Filter invalid/i.test(error.message);
   }
 
   private buildIssueDetail(binaryPath: string | null, error?: unknown): string {

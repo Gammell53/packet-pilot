@@ -64,35 +64,35 @@ export function useKeyboardShortcuts({
           e.preventDefault();
           const next = Math.min(selectedFrame + 1, totalFrames);
           onSelectFrame(next);
-          gridRef.current?.scrollToFrame(next);
+          gridRef.current?.scrollToRow(next);
         } else if (e.key === "ArrowUp" || e.key === "k") {
           e.preventDefault();
           const prev = Math.max(selectedFrame - 1, 1);
           onSelectFrame(prev);
-          gridRef.current?.scrollToFrame(prev);
+          gridRef.current?.scrollToRow(prev);
         } else if (e.key === "PageDown") {
           e.preventDefault();
           const next = Math.min(selectedFrame + 20, totalFrames);
           onSelectFrame(next);
-          gridRef.current?.scrollToFrame(next);
+          gridRef.current?.scrollToRow(next);
         } else if (e.key === "PageUp") {
           e.preventDefault();
           const prev = Math.max(selectedFrame - 20, 1);
           onSelectFrame(prev);
-          gridRef.current?.scrollToFrame(prev);
+          gridRef.current?.scrollToRow(prev);
         } else if (e.key === "Home") {
           e.preventDefault();
           onSelectFrame(1);
-          gridRef.current?.scrollToFrame(1);
+          gridRef.current?.scrollToRow(1);
         } else if (e.key === "End") {
           e.preventDefault();
           onSelectFrame(totalFrames);
-          gridRef.current?.scrollToFrame(totalFrames);
+          gridRef.current?.scrollToRow(totalFrames);
         }
       } else if (totalFrames > 0 && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
         // Select first packet if none selected
         onSelectFrame(1);
-        gridRef.current?.scrollToFrame(1);
+        gridRef.current?.scrollToRow(1);
       }
 
       // Escape: Close dialogs
