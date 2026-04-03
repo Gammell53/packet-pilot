@@ -9,7 +9,7 @@
 
 > *"Show me all failed TLS handshakes"* → PacketPilot finds them.
 
-![PacketPilot Demo](docs/demo.mp4)
+https://github.com/user-attachments/assets/f1ac9685-9b0c-45d8-888e-7a965a55f683
 
 ## Why PacketPilot?
 
