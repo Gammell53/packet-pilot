@@ -9,9 +9,7 @@
 
 > *"Show me all failed TLS handshakes"* → PacketPilot finds them.
 
-<div align="center">
-  <video src="https://github.com/Gammell53/packet-pilot/raw/master/docs/demo.mp4" width="800" autoplay loop muted playsinline></video>
-</div>
+![PacketPilot Demo](docs/demo.mp4)
 
 ## Why PacketPilot?
 
