@@ -9,6 +9,8 @@
 
 > *"Show me all failed TLS handshakes"* → PacketPilot finds them.
 
+https://github.com/Gammell53/packet-pilot/raw/master/docs/demo.mp4
+
 ## Why PacketPilot?
 
 Wireshark is powerful, but its filter syntax is arcane. PacketPilot lets you **ask questions in natural language** while using Wireshark's actual dissection engine under the hood.
