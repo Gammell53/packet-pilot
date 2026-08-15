@@ -5,6 +5,7 @@ import {
   MOCK_FRAME_DETAILS,
   MOCK_SETTINGS,
   MOCK_SETTINGS_WITH_KEY,
+  MOCK_SETTINGS_WITH_UNACCEPTED_KEY,
   MOCK_INSTALL_HEALTH,
   MOCK_RUNTIME_DIAGNOSTICS,
   MOCK_CAPTURE_STATS,
@@ -25,43 +26,61 @@ const DEFAULT_MOCK_OPTIONS: MockApiOptions = {
 const AUTH_MOCK_OPTIONS: MockApiOptions = {
   ...DEFAULT_MOCK_OPTIONS,
   settings: MOCK_SETTINGS_WITH_KEY,
+  aiRunning: true,
 };
+
+const UNACCEPTED_AUTH_MOCK_OPTIONS: MockApiOptions = {
+  ...DEFAULT_MOCK_OPTIONS,
+  settings: MOCK_SETTINGS_WITH_UNACCEPTED_KEY,
+};
+
+async function waitForAppReady(page: Page): Promise<void> {
+  await expect(page.locator(".open-button")).toBeEnabled({ timeout: 10_000 });
+}
 
 /**
  * Extended test fixtures for Packet Pilot e2e tests.
  *
  * - `mockPage`: Injects mock API, navigates to /, waits for app to be ready (sharkd init complete)
  * - `loadedPage`: Same as mockPage + simulates a file open so the grid is populated
- * - `authedPage`: mockPage with an API key pre-configured
+ * - `authedPage`: mockPage with an API key and the current disclosure accepted
+ * - `unacceptedAuthedPage`: mockPage with a migrated key that has not accepted the disclosure
  */
 export const test = base.extend<{
   mockPage: Page;
   loadedPage: Page;
   authedPage: Page;
+  unacceptedAuthedPage: Page;
 }>({
   mockPage: async ({ page }, use) => {
     await page.addInitScript(createMockApiScript(DEFAULT_MOCK_OPTIONS));
     await page.goto("/");
-    // Wait for sharkd initialization (200ms delay + getInstallHealth + getStatus)
-    await page.waitForSelector(".loading-overlay", { state: "detached", timeout: 5000 }).catch(() => {});
+    await waitForAppReady(page);
     await use(page);
   },
 
   loadedPage: async ({ page }, use) => {
     await page.addInitScript(createMockApiScript(DEFAULT_MOCK_OPTIONS));
     await page.goto("/");
-    await page.waitForSelector(".loading-overlay", { state: "detached", timeout: 5000 }).catch(() => {});
+    await waitForAppReady(page);
     // Open a file
     await page.click(".open-button");
-    // Wait for the packet grid to render rows
-    await page.waitForSelector(".packet-row", { timeout: 5000 });
+    // Wait for packet data, not just virtualized placeholder rows.
+    await page.waitForSelector(".packet-row:not(.loading)", { state: "attached", timeout: 5000 });
     await use(page);
   },
 
   authedPage: async ({ page }, use) => {
     await page.addInitScript(createMockApiScript(AUTH_MOCK_OPTIONS));
     await page.goto("/");
-    await page.waitForSelector(".loading-overlay", { state: "detached", timeout: 5000 }).catch(() => {});
+    await waitForAppReady(page);
+    await use(page);
+  },
+
+  unacceptedAuthedPage: async ({ page }, use) => {
+    await page.addInitScript(createMockApiScript(UNACCEPTED_AUTH_MOCK_OPTIONS));
+    await page.goto("/");
+    await waitForAppReady(page);
     await use(page);
   },
 });
@@ -69,7 +88,7 @@ export const test = base.extend<{
 /** Helper: open a file on a mockPage that doesn't have one loaded yet */
 export async function simulateFileOpen(page: Page): Promise<void> {
   await page.click(".open-button");
-  await page.waitForSelector(".packet-row", { timeout: 5000 });
+  await page.waitForSelector(".packet-row:not(.loading)", { state: "attached", timeout: 5000 });
 }
 
 /** Helper: click a packet row by its frame number text */

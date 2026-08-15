@@ -39,7 +39,7 @@ Wireshark is powerful, but its filter syntax is arcane. PacketPilot lets you **a
 - Stream reconstruction
 
 ### 💻 Cross-Platform
-- Linux and Windows via CI, with macOS assets supported for manual packaging
+- Linux and Windows releases, plus Apple Silicon macOS packaging and smoke testing
 
 ## Prerequisites
 
@@ -50,18 +50,16 @@ Wireshark is powerful, but its filter syntax is arcane. PacketPilot lets you **a
    - Or via package manager (see below)
    - Verify: `sharkd -v`
 
-2. **Node.js** - Version 18 or later
+2. **Node.js** - Version 22.12 or later
    - Download from [nodejs.org](https://nodejs.org/)
 
-### For Distribution (Bundled sharkd)
+### For Distribution
 
-For production builds, sharkd can be bundled with the Electron app. Place platform-specific binaries in `resources/sharkd/`:
+Linux and Windows release builds bundle platform-specific `sharkd` resources from `resources/sharkd/`. The current Apple Silicon macOS beta deliberately uses `sharkd` from an installed official Wireshark application and does not bundle Wireshark's runtime closure.
 
-| Platform | Filename |
-|----------|----------|
+| Platform | Bundled filename |
+|----------|------------------|
 | Linux x64 | `sharkd-x86_64-unknown-linux-gnu` |
-| macOS x64 | `sharkd-x86_64-apple-darwin` |
-| macOS ARM | `sharkd-aarch64-apple-darwin` |
 | Windows | `sharkd-x86_64-pc-windows-msvc.exe` |
 
 See `resources/sharkd/README.md` for details on obtaining sharkd binaries.
@@ -69,11 +67,10 @@ See `resources/sharkd/README.md` for details on obtaining sharkd binaries.
 ### Platform Notes
 
 - **Linux**: install Node.js and Wireshark/`sharkd`, then use `npm install` and `npm run dev`.
-- **macOS**: install Node.js and Wireshark/`sharkd`, then use `npm install` and `npm run dev`.
+- **macOS (Apple Silicon)**: install the official Wireshark app in `/Applications` or `~/Applications` (or install `wireshark-app` with Homebrew), then use `npm install` and `npm run dev`. PacketPilot also checks `/opt/homebrew/bin`, `/usr/local/bin`, `PATH`, and the optional `PACKET_PILOT_SHARKD_PATH` override.
 - **Windows**: install Node.js and Wireshark, then use `npm install` and `npm run dev`.
 
-For packaged releases, use the Electron build flow in `package.json` (`npm run dist` or `npm run dist:win`) and bundle `sharkd` assets under `resources/sharkd/`.
-The current CI release workflow publishes Linux and Windows artifacts; macOS packaging is still a manual path.
+For packaged releases, use the Electron build flow in `package.json` (`npm run dist` or `npm run dist:win`). Linux and Windows releases bundle `sharkd`; the current macOS package uses a locally installed Wireshark runtime. Automated macOS packaging and smoke testing run on Apple Silicon CI, but Developer ID signing/notarization must be configured before publishing the macOS build broadly.
 
 ## Installation
 
@@ -234,6 +231,11 @@ packet-pilot/
 ## Contributing
 
 Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md) before getting started.
+
+## Security and Privacy
+
+- Read [SECURITY.md](SECURITY.md) for vulnerability reporting and security guidance.
+- Read [PRIVACY.md](PRIVACY.md) before using optional AI analysis with sensitive captures.
 
 ## License
 

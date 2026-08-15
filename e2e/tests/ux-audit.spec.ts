@@ -10,7 +10,8 @@ test.describe("UX Audit", () => {
   });
 
   test("GoTo button has title with shortcut hint", async ({ loadedPage: page }) => {
-    await expect(page.locator('[title="Go to packet (Ctrl+G)"]')).toBeVisible();
+    const modifier = process.platform === "darwin" ? "⌘" : "Ctrl";
+    await expect(page.locator(`[title="Go to packet (${modifier}+G)"]`)).toBeVisible();
   });
 
   test("GoTo dialog input gets autofocus", async ({ loadedPage: page }) => {
@@ -31,7 +32,7 @@ test.describe("UX Audit", () => {
 
   test("footer shows AI Chat shortcut hint", async ({ mockPage: page }) => {
     await expect(page.locator(".shortcuts-hint")).toContainText("AI Chat");
-    await expect(page.locator(".shortcuts-hint kbd")).toHaveText("Ctrl+K");
+    await expect(page.locator(".shortcuts-hint kbd")).toHaveText(process.platform === "darwin" ? "⌘+K" : "Ctrl+K");
   });
 
   test("dark theme applies correct background", async ({ mockPage: page }) => {
@@ -62,7 +63,7 @@ test.describe("UX Audit", () => {
       installHealth: { ok: false, issues: [{ code: "MISSING", message: "sharkd not found" }], checked_paths: [], recommended_action: "Install sharkd" },
       runtimeDiagnostics: MOCK_RUNTIME_DIAGNOSTICS,
       captureStats: MOCK_CAPTURE_STATS,
-      settings: { apiKey: null, model: "anthropic/claude-sonnet-4" },
+      settings: { hasApiKey: false, apiKeyUnavailable: false, aiDisclosureAccepted: false, model: "anthropic/claude-sonnet-4" },
     }));
     await page.goto("/");
     // Wait for initialization attempt

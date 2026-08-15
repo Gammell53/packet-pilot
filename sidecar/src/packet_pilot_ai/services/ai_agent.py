@@ -331,6 +331,9 @@ class AIServiceError(Exception):
 
 
 
+def get_model() -> str:
+    """Return the configured model, falling back to the default OpenRouter model."""
+    return os.environ.get("AI_MODEL", "google/gemini-3-flash-preview")
 
 
 SYSTEM_PROMPT = """You are PacketPilot AI, an expert network packet analyst. You help users understand network traffic in PCAP files.

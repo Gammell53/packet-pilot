@@ -1,41 +1,49 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { AiModelOption, AppSettings } from "../types";
 import { getDefaultModel, getModels, mergeModels, normalizeModel } from "../constants/models";
 import { desktop } from "../lib/desktop";
 
 const DEFAULT_SETTINGS: AppSettings = {
-  apiKey: null,
+  hasApiKey: false,
+  apiKeyUnavailable: false,
+  aiDisclosureAccepted: false,
   model: getDefaultModel(),
 };
 
 function normalizeSettings(stored: Partial<AppSettings>): AppSettings {
   return {
-    apiKey: stored.apiKey ?? null,
+    hasApiKey: stored.hasApiKey === true,
+    apiKeyUnavailable: stored.apiKeyUnavailable === true,
+    aiDisclosureAccepted: stored.aiDisclosureAccepted === true,
     model: normalizeModel(stored.model),
   };
 }
 
-export function useSettings() {
+export function useSettings(
+  { loadModelCatalog = false }: { loadModelCatalog?: boolean } = {},
+) {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [availableModels, setAvailableModels] = useState<AiModelOption[]>(getModels());
   const [isLoading, setIsLoading] = useState(true);
+  const catalogLoadedRef = useRef(false);
 
   const refreshSettings = useCallback(async () => {
     try {
-      const [stored, models] = await Promise.all([
-        desktop.settings.get(),
-        desktop.settings.getAvailableModels().catch((error) => {
+      const stored = await desktop.settings.get();
+      setSettings(normalizeSettings(stored));
+
+      if (loadModelCatalog && !catalogLoadedRef.current) {
+        catalogLoadedRef.current = true;
+        const models = await desktop.settings.getAvailableModels().catch((error) => {
           console.error("Failed to load OpenRouter model catalog:", error);
           return getModels();
-        }),
-      ]);
-      const normalizedSettings = normalizeSettings(stored);
-      setSettings(normalizedSettings);
-      setAvailableModels(mergeModels(models));
+        });
+        setAvailableModels(mergeModels(models));
+      }
     } catch (error) {
       console.error("Failed to load settings:", error);
     }
-  }, []);
+  }, [loadModelCatalog]);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,6 +70,11 @@ export function useSettings() {
     setSettings(normalizeSettings(next));
   }, []);
 
+  const acceptAiDisclosure = useCallback(async () => {
+    const next = await desktop.settings.acceptAiDisclosure();
+    setSettings(normalizeSettings(next));
+  }, []);
+
   const updateModel = useCallback(async (model: string) => {
     const next = await desktop.settings.setModel(model);
     const normalizedSettings = normalizeSettings(next);
@@ -69,7 +82,7 @@ export function useSettings() {
     setAvailableModels((currentModels) => mergeModels(currentModels));
   }, []);
 
-  const hasConfiguredAuth = Boolean(settings.apiKey);
+  const hasConfiguredAuth = settings.hasApiKey && settings.aiDisclosureAccepted;
 
   return {
     settings,
@@ -77,6 +90,7 @@ export function useSettings() {
     isLoading,
     hasConfiguredAuth,
     updateApiKey,
+    acceptAiDisclosure,
     updateModel,
   };
 }

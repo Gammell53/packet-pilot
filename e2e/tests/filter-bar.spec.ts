@@ -90,7 +90,7 @@ test.describe("Filter Bar", () => {
     await page.locator(".filter-input").fill("http");
     await page.click(".filter-apply");
 
-    await page.click('[title="Go to packet (Ctrl+G)"]');
+    await page.click('[title^="Go to packet ("]');
     await expect(page.locator(".dialog h3")).toHaveText("Go to Match");
     await expect(page.locator(".dialog-input")).toHaveAttribute("placeholder", "Enter match number (1-2)");
 
@@ -101,7 +101,7 @@ test.describe("Filter Bar", () => {
   });
 
   test("GoTo button opens dialog", async ({ loadedPage: page }) => {
-    await page.click('[title="Go to packet (Ctrl+G)"]');
+    await page.click('[title^="Go to packet ("]');
     await expect(page.locator(".dialog-overlay")).toBeVisible();
     await expect(page.locator(".dialog h3")).toHaveText("Go to Packet");
   });

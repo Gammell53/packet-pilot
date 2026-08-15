@@ -6,10 +6,13 @@
   },
   "description": "AI-powered network packet analyzer",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "main": ".electron/electron/main.cjs",
   "license": "MIT",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "node scripts/dev-electron.mjs",
     "dev:renderer": "vite",
@@ -18,6 +21,8 @@
     "build:renderer": "tsc && vite build",
     "build:main": "tsc -p tsconfig.electron.json",
     "verify:sharkd": "node scripts/verify-sharkd.cjs",
+    "verify:package": "node scripts/verify-packaged-app.cjs",
+    "verify:release-version": "node scripts/verify-release-version.cjs",
     "build:sharkd": "./scripts/bundle-sharkd.sh",
     "build:sharkd:win": "powershell -ExecutionPolicy Bypass -File scripts/bundle-sharkd.ps1",
     "build:binaries": "npm run build:sharkd",
@@ -25,14 +30,15 @@
     "preview": "vite preview",
     "start": "electron .electron/electron/main.cjs",
     "smoke:packaged": "node scripts/run-electron-smoke.cjs",
-    "dist": "npm run verify:sharkd && npm run build && electron-builder",
-    "dist:win": "npm run verify:sharkd && npm run build && electron-builder --win nsis",
+    "dist": "npm run verify:sharkd && npm run build && electron-builder --publish never && npm run verify:package",
+    "dist:win": "npm run verify:sharkd && npm run build && electron-builder --win nsis --publish never && npm run verify:package",
     "corpus:list": "node scripts/public-pcap-corpus.cjs list",
     "corpus:sync": "node scripts/public-pcap-corpus.cjs sync",
     "corpus:open": "node scripts/public-pcap-corpus.cjs open",
-    "test:ai-harness": "npm run build:main && node scripts/run-tests.cjs",
+    "test:ai-harness": "npm run build && node scripts/run-tests.cjs",
     "test:ai-harness:live": "npm run build:main && node scripts/run-ai-harness-live.cjs",
     "test:e2e": "playwright test --config e2e/playwright.config.ts",
+    "test:e2e:typecheck": "tsc -p e2e/tsconfig.json",
     "test:e2e:ui": "playwright test --config e2e/playwright.config.ts --ui",
     "test:e2e:headed": "playwright test --config e2e/playwright.config.ts --headed"
   },
@@ -51,7 +57,7 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
-    "electron": "^37.2.0",
+    "electron": "^43.4.0",
     "electron-builder": "^26.0.12",
     "typescript": "~5.8.3",
     "vite": "^7.0.4"
@@ -60,33 +66,41 @@
     "appId": "com.alexanderg.packet-pilot",
     "productName": "PacketPilot",
     "files": [
-      "dist/**/*",
+      "dist/renderer/**/*",
       ".electron/**/*",
       "package.json"
     ],
     "directories": {
       "buildResources": "resources/icons"
     },
-    "extraResources": [
-      {
-        "from": "resources/sharkd",
-        "to": ".",
-        "filter": [
-          "sharkd-*",
-          "sharkd-wrapper-*",
-          "sharkd-libs/**/*",
-          "*.dll"
-        ]
-      }
-    ],
     "win": {
       "icon": "resources/icons/icon.ico",
       "target": [
         "nsis"
+      ],
+      "extraResources": [
+        {
+          "from": "resources/sharkd",
+          "to": ".",
+          "filter": [
+            "sharkd-*.exe",
+            "sharkd.exe",
+            "*.dll"
+          ]
+        }
       ]
     },
     "mac": {
-      "icon": "resources/icons/icon.icns"
+      "icon": "resources/icons/icon.icns",
+      "hardenedRuntime": true,
+      "notarize": true,
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "dmg": {
+      "writeUpdateInfo": false
     },
     "linux": {
       "icon": "resources/icons/icon.png",
@@ -95,6 +109,17 @@
         "AppImage",
         "deb",
         "tar.gz"
+      ],
+      "extraResources": [
+        {
+          "from": "resources/sharkd",
+          "to": ".",
+          "filter": [
+            "sharkd-*-unknown-linux-gnu",
+            "sharkd-wrapper-*-unknown-linux-gnu",
+            "sharkd-libs/**/*"
+          ]
+        }
       ]
     }
   }

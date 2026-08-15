@@ -47,7 +47,6 @@ function App() {
     runtimeDiagnostics,
     loadFile,
     clearError,
-    runInstallHealthCheck,
     retryInitialization,
   } = useSharkd();
 
@@ -419,11 +418,8 @@ function App() {
             <pre className="error-message">{error}</pre>
             {installHealth && !installHealth.ok && (
               <div className="error-actions">
-                <button className="action-button" onClick={() => void runInstallHealthCheck()}>
-                  Retry Check
-                </button>
                 <button className="action-button" onClick={() => void retryInitialization()}>
-                  Retry Startup
+                  Retry Check
                 </button>
                 <button className="action-button" onClick={openTroubleshooting}>
                   Troubleshooting

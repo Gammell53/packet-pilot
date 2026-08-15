@@ -3,28 +3,31 @@
 ## Current Sprint: Foundation
 
 ### Blockers 🔴
-- [ ] **Windows sharkd not found** — sharkd binary not bundling correctly in Windows builds
-  - Root cause: CI builds sharkd from source but something breaks in the bundle step
-  - Need to verify DLLs are being copied correctly
-  - Need to test on actual Windows machine
+- [ ] **macOS signing and notarization** — no Developer ID identity or notarization credentials are configured
+- [ ] **macOS sharkd distribution decision** — current Apple Silicon build works with an installed Wireshark runtime, but the public installer is not yet self-contained
 
 ### In Progress 🟡
-- [x] Linux build verification — ✅ verification script works, full compile needs more RAM
-- [x] Pre-build verification script — ✅ created, committed to branch `fix/sharkd-verification`
+- [x] Windows sharkd packaging — CI build and packaged smoke test pass
+- [x] Apple Silicon macOS discovery, packaging, and real-PCAP smoke test
+- [ ] Validate the macOS workflow on GitHub Actions and publish a signed release candidate
 
 ### Ready for Review 🟢
-- [x] `scripts/verify-sharkd.js` — pre-build check that catches missing sharkd early
-- [x] `package.json` updates — verify:sharkd runs before builds
+- [x] Runtime discovery checks Wireshark app bundles, Homebrew, `PATH`, and `PACKET_PILOT_SHARKD_PATH`
+- [x] Packaged smoke harness detects `dist/mac-arm64`
+- [x] Release workflow includes an Apple Silicon macOS artifact
 
 ---
 
 ## Backlog
 
 ### Phase 1: Polish & Stability
-- [ ] Fix Windows sharkd bundling
-- [ ] Add better error messages for missing dependencies
-- [ ] Test on all platforms (Linux, macOS, Windows)
-- [ ] Create first official release (v0.1.0)
+- [x] Fix Windows sharkd bundling
+- [x] Verify Apple Silicon macOS build against a real capture
+- [ ] Configure Developer ID signing and Apple notarization
+- [ ] Bundle the macOS sharkd runtime or make the Wireshark prerequisite part of onboarding
+- [ ] Add better error messages and an install link for missing dependencies
+- [ ] Validate release candidates on Linux, macOS, and Windows
+- [ ] Publish the first non-draft release
 
 ### Phase 2: Monetization Foundation
 - [ ] License key system (basic implementation)
@@ -67,5 +70,5 @@
 
 ---
 
-*Last updated: 2026-02-06*
+*Last updated: 2026-08-14*
 *To migrate to Linear: Export issues as CSV or use Linear API*

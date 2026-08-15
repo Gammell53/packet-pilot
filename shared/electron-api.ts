@@ -222,7 +222,9 @@ export type AiStreamEvent =
 
 export interface AppSettings {
   model: string;
-  apiKey: string | null;
+  hasApiKey: boolean;
+  apiKeyUnavailable: boolean;
+  aiDisclosureAccepted: boolean;
 }
 
 export interface AiRuntimeStatus {
@@ -265,6 +267,7 @@ export interface PacketPilotApi {
     get(): Promise<AppSettings>;
     getAvailableModels(): Promise<AiModelOption[]>;
     setApiKey(apiKey: string | null): Promise<AppSettings>;
+    acceptAiDisclosure(): Promise<AppSettings>;
     setModel(model: string): Promise<AppSettings>;
   };
 }

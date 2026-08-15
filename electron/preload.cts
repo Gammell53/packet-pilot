@@ -26,6 +26,7 @@ const IPC_CHANNELS = {
   settingsGet: "settings:get",
   settingsGetAvailableModels: "settings:getAvailableModels",
   settingsSetApiKey: "settings:setApiKey",
+  settingsAcceptAiDisclosure: "settings:acceptAiDisclosure",
   settingsSetModel: "settings:setModel",
 } as const;
 
@@ -73,6 +74,7 @@ const api: PacketPilotApi = {
     get: () => ipcRenderer.invoke(IPC_CHANNELS.settingsGet),
     getAvailableModels: () => ipcRenderer.invoke(IPC_CHANNELS.settingsGetAvailableModels),
     setApiKey: (apiKey: string | null) => ipcRenderer.invoke(IPC_CHANNELS.settingsSetApiKey, apiKey),
+    acceptAiDisclosure: () => ipcRenderer.invoke(IPC_CHANNELS.settingsAcceptAiDisclosure),
     setModel: (model: string) => ipcRenderer.invoke(IPC_CHANNELS.settingsSetModel, model),
   },
 };

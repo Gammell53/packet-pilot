@@ -18,7 +18,7 @@ Place the following binaries here (depending on target platforms):
 | macOS ARM64 | `sharkd-aarch64-apple-darwin` |
 | Windows x64 | `sharkd-x86_64-pc-windows-msvc.exe` |
 
-Current automated release packaging covers Linux and Windows. macOS binaries are still useful for local/manual packaging, but they are not yet published by CI.
+Current automated release packaging covers Linux, Windows, and Apple Silicon macOS. Linux and Windows bundle `sharkd`; the macOS build currently discovers `sharkd` from an installed Wireshark app, Homebrew, `PATH`, or `PACKET_PILOT_SHARKD_PATH`. A self-contained macOS runtime remains release work.
 
 ## How to Obtain sharkd
 

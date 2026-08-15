@@ -19,7 +19,7 @@ test.describe("App Layout", () => {
   });
 
   test("shows keyboard shortcut hint in empty state", async ({ mockPage: page }) => {
-    await expect(page.locator(".shortcut-hint kbd").first()).toHaveText("Ctrl");
+    await expect(page.locator(".shortcut-hint kbd").first()).toHaveText(process.platform === "darwin" ? "⌘" : "Ctrl");
     await expect(page.locator(".shortcut-hint kbd").last()).toHaveText("O");
   });
 
@@ -53,6 +53,15 @@ test.describe("App Layout", () => {
     await expect(page.locator(".open-button")).toContainText("Open Capture");
   });
 
+  test("does not load the OpenRouter model catalog until AI is opened", async ({ mockPage: page }) => {
+    await expect.poll(() => page.evaluate("window.__mockGetModelCatalogRequestCount()"))
+      .toBe(0);
+
+    await page.keyboard.press("Control+k");
+    await expect.poll(() => page.evaluate("window.__mockGetModelCatalogRequestCount()"))
+      .toBe(1);
+  });
+
   test("footer shows Ready status", async ({ mockPage: page }) => {
     await expect(page.locator(".status-indicator")).toContainText("Ready");
     await expect(page.locator(".status-dot.ready")).toBeVisible();
@@ -60,6 +69,6 @@ test.describe("App Layout", () => {
 
   test("footer shows AI Chat shortcut hint", async ({ mockPage: page }) => {
     await expect(page.locator(".shortcuts-hint")).toContainText("AI Chat");
-    await expect(page.locator(".shortcuts-hint kbd")).toHaveText("Ctrl+K");
+    await expect(page.locator(".shortcuts-hint kbd")).toHaveText(process.platform === "darwin" ? "⌘+K" : "Ctrl+K");
   });
 });

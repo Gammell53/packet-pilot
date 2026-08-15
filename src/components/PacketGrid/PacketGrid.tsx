@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, forwardRef, useImperativeHandle, useState } from "react";
 import type { FrameData, PacketGridRef } from "../../types";
+import { shortcutModifierLabel } from "../../utils/platform";
 import "./PacketGrid.css";
 
 interface PacketGridProps {
@@ -230,7 +231,7 @@ export const PacketGrid = forwardRef<PacketGridRef, PacketGridProps>(({
           <h3>{title}</h3>
           <p>{description}</p>
           {!hasCaptureLoaded && (
-            <p className="shortcut-hint">Press <kbd>Ctrl</kbd>+<kbd>O</kbd> to open a file</p>
+            <p className="shortcut-hint">Press <kbd>{shortcutModifierLabel()}</kbd>+<kbd>O</kbd> to open a file</p>
           )}
         </div>
       </div>

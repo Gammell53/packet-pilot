@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { writeFileSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { AiStreamEvent, AiToolCallTrace } from "../shared/electron-api";
 import { appService } from "./services/app-service.cjs";
 import { aiAgentService } from "./services/ai-agent-service.cjs";
@@ -32,6 +33,7 @@ const IPC_CHANNELS = {
   settingsGet: "settings:get",
   settingsGetAvailableModels: "settings:getAvailableModels",
   settingsSetApiKey: "settings:setApiKey",
+  settingsAcceptAiDisclosure: "settings:acceptAiDisclosure",
   settingsSetModel: "settings:setModel",
 } as const;
 
@@ -96,7 +98,7 @@ function rendererEntryUrl(): string {
 }
 
 function rendererEntryFile(): string {
-  return join(app.getAppPath(), "dist", "index.html");
+  return join(app.getAppPath(), "dist", "renderer", "index.html");
 }
 
 function startupCapturePath(): string | null {
@@ -106,6 +108,49 @@ function startupCapturePath(): string | null {
   }
 
   return resolve(raw);
+}
+
+function isTrustedRendererUrl(rawUrl: string): boolean {
+  try {
+    const actual = new URL(rawUrl);
+    if (app.isPackaged) {
+      const expected = pathToFileURL(rendererEntryFile());
+      actual.hash = "";
+      actual.search = "";
+      return actual.href === expected.href;
+    }
+
+    return actual.origin === new URL(rendererEntryUrl()).origin;
+  } catch {
+    return false;
+  }
+}
+
+async function openExternalSafely(rawUrl: string): Promise<void> {
+  let target: URL;
+  try {
+    target = new URL(rawUrl);
+  } catch {
+    throw new Error("Invalid external URL");
+  }
+
+  if (target.protocol !== "https:") {
+    throw new Error(`Blocked external URL protocol: ${target.protocol}`);
+  }
+
+  await shell.openExternal(target.href);
+}
+
+function registerTrustedHandler(
+  channel: string,
+  listener: (event: Electron.IpcMainInvokeEvent, ...args: any[]) => unknown,
+): void {
+  ipcMain.handle(channel, (event, ...args) => {
+    if (!event.senderFrame || !isTrustedRendererUrl(event.senderFrame.url)) {
+      throw new Error(`Blocked IPC request on ${channel} from an untrusted renderer`);
+    }
+    return listener(event, ...args);
+  });
 }
 
 async function createWindow(): Promise<void> {
@@ -118,18 +163,28 @@ async function createWindow(): Promise<void> {
       preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    void openExternalSafely(url).catch((error) => {
+      console.error("Blocked external window request:", error);
+    });
     return { action: "deny" };
   });
 
-  if (isSmokeTestMode()) {
-    await mainWindow.loadURL("data:text/html,<html><body>PacketPilot smoke test</body></html>");
-  } else if (!app.isPackaged) {
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    if (isTrustedRendererUrl(url)) {
+      return;
+    }
+    event.preventDefault();
+    void openExternalSafely(url).catch((error) => {
+      console.error("Blocked renderer navigation:", error);
+    });
+  });
+
+  if (!app.isPackaged) {
     await mainWindow.loadURL(rendererEntryUrl());
     mainWindow.webContents.openDevTools({ mode: "detach" });
   } else {
@@ -146,10 +201,10 @@ function sendToRenderer(channel: string, payload: unknown): void {
 }
 
 function registerIpcHandlers(): void {
-  ipcMain.handle(IPC_CHANNELS.appGetRuntimeDiagnostics, () => appService.getRuntimeDiagnostics());
-  ipcMain.handle(IPC_CHANNELS.appGetStartupCapturePath, () => startupCapturePath());
+  registerTrustedHandler(IPC_CHANNELS.appGetRuntimeDiagnostics, () => appService.getRuntimeDiagnostics());
+  registerTrustedHandler(IPC_CHANNELS.appGetStartupCapturePath, () => startupCapturePath());
 
-  ipcMain.handle(IPC_CHANNELS.openCapture, async () => {
+  registerTrustedHandler(IPC_CHANNELS.openCapture, async () => {
     const result = await dialog.showOpenDialog({
       properties: ["openFile"],
       filters: [
@@ -168,65 +223,41 @@ function registerIpcHandlers(): void {
     return result.filePaths[0] ?? null;
   });
 
-  ipcMain.handle(IPC_CHANNELS.openExternal, async (_event, url: string) => {
-    await shell.openExternal(url);
+  registerTrustedHandler(IPC_CHANNELS.openExternal, async (_event, url: string) => {
+    await openExternalSafely(url);
   });
 
-  ipcMain.handle(IPC_CHANNELS.sharkdInit, () => sharkdService.init());
-  ipcMain.handle(IPC_CHANNELS.sharkdLoadPcap, (_event, path: string) => sharkdService.loadPcap(path));
-  ipcMain.handle(IPC_CHANNELS.sharkdGetFrames, (_event, skip: number, limit: number, filter?: string) =>
+  registerTrustedHandler(IPC_CHANNELS.sharkdInit, () => sharkdService.init());
+  registerTrustedHandler(IPC_CHANNELS.sharkdLoadPcap, (_event, path: string) => sharkdService.loadPcap(path));
+  registerTrustedHandler(IPC_CHANNELS.sharkdGetFrames, (_event, skip: number, limit: number, filter?: string) =>
     sharkdService.getFrames(skip, limit, filter ?? sharkdService.getActiveFilter()),
   );
-  ipcMain.handle(IPC_CHANNELS.sharkdGetStatus, () => sharkdService.getStatus());
-  ipcMain.handle(IPC_CHANNELS.sharkdCheckFilter, (_event, filter: string) => sharkdService.checkFilter(filter));
-  ipcMain.handle(IPC_CHANNELS.sharkdApplyFilter, (_event, filter: string) => sharkdService.applyFilter(filter));
-  ipcMain.handle(IPC_CHANNELS.sharkdGetFrameDetails, (_event, frameNum: number) =>
+  registerTrustedHandler(IPC_CHANNELS.sharkdGetStatus, () => sharkdService.getStatus());
+  registerTrustedHandler(IPC_CHANNELS.sharkdCheckFilter, (_event, filter: string) => sharkdService.checkFilter(filter));
+  registerTrustedHandler(IPC_CHANNELS.sharkdApplyFilter, (_event, filter: string) => sharkdService.applyFilter(filter));
+  registerTrustedHandler(IPC_CHANNELS.sharkdGetFrameDetails, (_event, frameNum: number) =>
     sharkdService.getFrameDetails(frameNum),
   );
-  ipcMain.handle(IPC_CHANNELS.sharkdGetStream, (_event, streamId: number, protocol?: string, format?: string) =>
+  registerTrustedHandler(IPC_CHANNELS.sharkdGetStream, (_event, streamId: number, protocol?: string, format?: string) =>
     sharkdService.getStream(streamId, protocol, format),
   );
-  ipcMain.handle(IPC_CHANNELS.sharkdGetCaptureStats, () => sharkdService.getCaptureStats());
-  ipcMain.handle(IPC_CHANNELS.sharkdGetInstallHealth, () => sharkdService.getInstallHealth());
+  registerTrustedHandler(IPC_CHANNELS.sharkdGetCaptureStats, () => sharkdService.getCaptureStats());
+  registerTrustedHandler(IPC_CHANNELS.sharkdGetInstallHealth, () => sharkdService.getInstallHealth());
 
-  ipcMain.handle(IPC_CHANNELS.aiStart, () => aiAgentService.start());
-  ipcMain.handle(IPC_CHANNELS.aiStop, () => aiAgentService.stop());
-  ipcMain.handle(IPC_CHANNELS.aiGetStatus, () => aiAgentService.getStatus());
-  ipcMain.handle(IPC_CHANNELS.aiBeginAnalyze, (_event, request) => aiAgentService.beginAnalyze(request));
-  ipcMain.handle(IPC_CHANNELS.aiCancelAnalyze, (_event, streamId: string) => aiAgentService.cancelAnalyze(streamId));
+  registerTrustedHandler(IPC_CHANNELS.aiStart, () => aiAgentService.start());
+  registerTrustedHandler(IPC_CHANNELS.aiStop, () => aiAgentService.stop());
+  registerTrustedHandler(IPC_CHANNELS.aiGetStatus, () => aiAgentService.getStatus());
+  registerTrustedHandler(IPC_CHANNELS.aiBeginAnalyze, (_event, request) => aiAgentService.beginAnalyze(request));
+  registerTrustedHandler(IPC_CHANNELS.aiCancelAnalyze, (_event, streamId: string) => aiAgentService.cancelAnalyze(streamId));
 
-  ipcMain.handle(IPC_CHANNELS.settingsGet, () => settingsService.getSettings());
-  ipcMain.handle(IPC_CHANNELS.settingsGetAvailableModels, () => settingsService.getAvailableModels());
-  ipcMain.handle(IPC_CHANNELS.settingsSetApiKey, (_event, apiKey: string | null) => settingsService.setApiKey(apiKey));
-  ipcMain.handle(IPC_CHANNELS.settingsSetModel, (_event, model: string) => settingsService.setModel(model));
-}
-
-async function waitForWindowLoad(window: BrowserWindow): Promise<void> {
-  const webContents = window.webContents as any;
-
-  if (!webContents.isLoadingMainFrame()) {
-    return;
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    const cleanup = () => {
-      webContents.off("did-finish-load", handleLoad);
-      webContents.off("did-fail-load", handleFail);
-    };
-
-    const handleLoad = () => {
-      cleanup();
-      resolve();
-    };
-
-    const handleFail = (_event: Event, _errorCode: number, errorDescription: string) => {
-      cleanup();
-      reject(new Error(`Renderer failed to load: ${errorDescription}`));
-    };
-
-    webContents.once("did-finish-load", handleLoad);
-    webContents.once("did-fail-load", handleFail);
+  registerTrustedHandler(IPC_CHANNELS.settingsGet, () => settingsService.getSettings());
+  registerTrustedHandler(IPC_CHANNELS.settingsGetAvailableModels, () => settingsService.getAvailableModels());
+  registerTrustedHandler(IPC_CHANNELS.settingsSetApiKey, async (_event, apiKey: string | null) => {
+    await aiAgentService.stop();
+    return settingsService.setApiKey(apiKey);
   });
+  registerTrustedHandler(IPC_CHANNELS.settingsAcceptAiDisclosure, () => settingsService.acceptAiDisclosure());
+  registerTrustedHandler(IPC_CHANNELS.settingsSetModel, (_event, model: string) => settingsService.setModel(model));
 }
 
 async function emitSmokeResult(result: SmokeTestResult): Promise<void> {
@@ -249,6 +280,21 @@ async function emitSmokeResult(result: SmokeTestResult): Promise<void> {
   });
 }
 
+async function waitForRendererReady(window: BrowserWindow, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const ready = (await window.webContents.executeJavaScript(
+      `Boolean(document.querySelector("#root")?.children.length && window.packetPilot)`,
+      true,
+    )) as boolean;
+    if (ready) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`renderer readiness timed out after ${timeoutMs}ms`);
+}
+
 async function runSmokeTest(): Promise<SmokeTestResult> {
   if (!mainWindow) {
     throw new Error("Smoke test requires an application window");
@@ -266,7 +312,7 @@ async function runSmokeTest(): Promise<SmokeTestResult> {
 
   const result: SmokeTestResult = {
     ok: false,
-    windowLoaded: true,
+    windowLoaded: false,
     capturePath,
     filter,
     sharkd: {
@@ -295,6 +341,9 @@ async function runSmokeTest(): Promise<SmokeTestResult> {
   };
 
   try {
+    await waitForRendererReady(mainWindow, stepTimeoutMs);
+    result.windowLoaded = true;
+
     await withTimeout("sharkd status", sharkdService.getStatus(), stepTimeoutMs);
 
     if (capturePath) {
@@ -305,6 +354,9 @@ async function runSmokeTest(): Promise<SmokeTestResult> {
 
       result.sharkd.loadedCapture = true;
       result.sharkd.frameCount = loadResult.frame_count;
+      if (!Number.isFinite(loadResult.frame_count) || loadResult.frame_count <= 0) {
+        throw new Error("Smoke-test capture loaded without any frames");
+      }
 
       if (filter) {
         const isFilterValid = await withTimeout("filter validation", sharkdService.checkFilter(filter), stepTimeoutMs);
@@ -317,6 +369,9 @@ async function runSmokeTest(): Promise<SmokeTestResult> {
           sharkdService.applyFilter(filter),
           stepTimeoutMs,
         );
+        if (result.sharkd.filteredFrameCount <= 0) {
+          throw new Error(`Smoke-test filter returned no frames: ${filter}`);
+        }
       }
 
       const frames = await withTimeout(
@@ -326,19 +381,24 @@ async function runSmokeTest(): Promise<SmokeTestResult> {
       );
       const firstFrame = frames.frames[0] ?? null;
       result.sharkd.firstFrameNumber = firstFrame?.number ?? null;
+      if (!firstFrame) {
+        throw new Error("Smoke-test frame fetch returned no frames");
+      }
 
-      if (firstFrame) {
-        const details = await withTimeout(
-          "frame details",
-          sharkdService.getFrameDetails(firstFrame.number),
-          stepTimeoutMs,
-        );
-        result.sharkd.firstFrameHasTree = Array.isArray(details.tree) && details.tree.length > 0;
+      const details = await withTimeout(
+        "frame details",
+        sharkdService.getFrameDetails(firstFrame.number),
+        stepTimeoutMs,
+      );
+      result.sharkd.firstFrameHasTree = Array.isArray(details.tree) && details.tree.length > 0;
+      if (!result.sharkd.firstFrameHasTree) {
+        throw new Error(`Smoke-test frame ${firstFrame.number} returned no protocol detail tree`);
       }
     }
 
     if (aiApiKey) {
       settingsService.setApiKey(aiApiKey);
+      settingsService.acceptAiDisclosure();
     }
 
     if (aiModel) {
@@ -388,6 +448,21 @@ async function runSmokeTest(): Promise<SmokeTestResult> {
     }
 
     result.diagnostics = await withTimeout("final runtime diagnostics", appService.getRuntimeDiagnostics(), stepTimeoutMs);
+    if (app.isPackaged && process.platform !== "darwin") {
+      const resolvedSharkd = result.diagnostics.sharkd.resolvedPath
+        ? resolve(result.diagnostics.sharkd.resolvedPath)
+        : null;
+      const resourcesRoot = resolve(process.resourcesPath);
+      const relativeSharkdPath = resolvedSharkd ? relative(resourcesRoot, resolvedSharkd) : "";
+      if (
+        !resolvedSharkd ||
+        !relativeSharkdPath ||
+        relativeSharkdPath.startsWith("..") ||
+        isAbsolute(relativeSharkdPath)
+      ) {
+        throw new Error("Packaged smoke resolved sharkd outside application resources");
+      }
+    }
     result.ok = true;
     return result;
   } catch (error) {

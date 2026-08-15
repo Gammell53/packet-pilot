@@ -19,7 +19,11 @@ This policy applies to:
 
 ## Security Considerations
 
-PacketPilot processes network packet captures which may contain sensitive data. Users should:
+PacketPilot processes network packet captures which may contain sensitive data. Capture parsing with `sharkd` occurs locally. AI analysis is optional and uses a user-provided OpenRouter API key. When a user submits an AI message, PacketPilot may send selected packet contents and raw bytes, capture summaries, endpoint and conversation metadata, and reconstructed stream text to OpenRouter and the chosen model provider. During an answer, the model can request additional packet numbers or stream IDs beyond the current UI selection; every resulting tool response is appended to the AI conversation and transmitted on a subsequent model call. The PCAP file itself is not uploaded as a file, but sensitive payload data may be included in the AI context.
+
+Users should:
 - Only analyze captures from trusted sources
-- Be aware that AI analysis sends packet metadata to external APIs (when configured)
-- Review the privacy implications of any API keys used
+- Review the AI disclosure before connecting OpenRouter
+- Avoid AI analysis for captures whose contents cannot leave the device
+- Understand that ZDR routing is a provider retention policy, not local-only processing
+- Protect their OpenRouter API key and monitor provider usage charges

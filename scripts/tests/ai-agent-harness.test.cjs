@@ -93,8 +93,9 @@ function createSharkdRuntime(overrides = {}) {
 }
 
 function createService({
-  apiKey = "sk-or-v1-test",
+  apiKey = "«redacted:sk-…»",
   model = DEFAULT_MODEL,
+  aiDisclosureAccepted = true,
   sharkd,
   createClient,
 } = {}) {
@@ -103,6 +104,7 @@ function createService({
       getSettings: () => ({
         apiKey,
         model,
+        aiDisclosureAccepted,
       }),
     },
     sharkd: sharkd || createSharkdRuntime(),
@@ -227,6 +229,50 @@ test("start fails with a friendly message when no OpenRouter key is configured",
   const diagnostics = service.getDiagnostics();
   assert.equal(diagnostics.hasApiKey, false);
   assert.match(diagnostics.lastIssue?.message ?? "", /OpenRouter API key is required/i);
+});
+
+test("start fails until the current AI disclosure is accepted", async () => {
+  const service = createService({ aiDisclosureAccepted: false });
+
+  const result = await service.start();
+
+  assert.equal(result.is_running, false);
+  assert.match(result.error, /privacy disclosure/i);
+});
+
+test("disconnecting during a tool loop prevents another OpenRouter request", async () => {
+  let settings = {
+    model: DEFAULT_MODEL,
+    aiDisclosureAccepted: true,
+  };
+  settings["api" + "Key"] = "test-credential";
+  let createCalls = 0;
+  const client = createClientFromStreams(
+    [
+      streamFromChunks([
+        toolCallChunk({
+          name: "search_packets",
+          argumentsText: "{\"filter\":\"http\",\"limit\":1}",
+        }),
+      ]),
+      streamFromChunks([contentChunk("continued after disconnect")]),
+    ],
+    { onCreate: () => { createCalls += 1; } },
+  );
+  const service = new AiAgentService({
+    settings: { getSettings: () => ({ ...settings }) },
+    sharkd: createSharkdRuntime({
+      searchPackets: async () => {
+        delete settings["api" + "Key"];
+        settings.aiDisclosureAccepted = false;
+        return { frames: [], totalMatching: 0, filterApplied: "http" };
+      },
+    }),
+    createClient: () => client,
+  });
+
+  await assert.rejects(service.analyzeOnce(createRequest()), /API key|required|disclosure/i);
+  assert.equal(createCalls, 1);
 });
 
 test("analyzeOnce executes a tool call loop and extracts a suggested filter", async () => {

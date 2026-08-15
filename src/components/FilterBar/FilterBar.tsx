@@ -1,3 +1,4 @@
+import { shortcutModifierLabel } from "../../utils/platform";
 import "./FilterBar.css";
 
 interface FilterBarProps {
@@ -60,7 +61,7 @@ export function FilterBar({
       <button
         className="icon-button small"
         onClick={onGoToPacket}
-        title="Go to packet (Ctrl+G)"
+        title={`Go to packet (${shortcutModifierLabel()}+G)`}
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"

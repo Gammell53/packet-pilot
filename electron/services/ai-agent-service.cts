@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import OpenAI from "openai";
 import type {
-  AppSettings,
   AiRuntimeDiagnostics,
   AiRuntimeStatus,
   AiStreamEvent,
@@ -44,7 +43,11 @@ export interface AiAgentClient {
 
 export interface AiAgentDependencies {
   settings: {
-    getSettings(): AppSettings;
+    getSettings(): {
+      model: string;
+      apiKey: string | null;
+      aiDisclosureAccepted: boolean;
+    };
   };
   sharkd: {
     getFrameDetails(frameNum: number): Promise<FrameDetails>;
@@ -249,7 +252,9 @@ function createDefaultDependencies(): AiAgentDependencies {
   const { sharkdService } = require("./sharkd-service.cjs") as typeof import("./sharkd-service.cjs");
 
   return {
-    settings: settingsService,
+    settings: {
+      getSettings: () => settingsService.getInternalSettings(),
+    },
     sharkd: sharkdService,
     createClient: (config) => new OpenAI(config),
   };
@@ -264,14 +269,18 @@ export class AiAgentService extends EventEmitter {
     super();
   }
 
-  private hasAuth(settings: { apiKey: string | null }): boolean {
-    return Boolean(settings.apiKey);
+  private hasAuth(settings: { apiKey: string | null; aiDisclosureAccepted: boolean }): boolean {
+    return Boolean(settings.apiKey && settings.aiDisclosureAccepted);
   }
 
   private getConfiguredApiKey(): string {
-    const apiKey = this.dependencies.settings.getSettings().apiKey?.trim();
+    const settings = this.dependencies.settings.getSettings();
+    const apiKey = settings.apiKey?.trim();
     if (!apiKey) {
       throw new Error("OpenRouter API key is required. Add it in AI settings.");
+    }
+    if (!settings.aiDisclosureAccepted) {
+      throw new Error("Accept the current AI privacy disclosure before using OpenRouter analysis.");
     }
 
     return apiKey;
@@ -313,7 +322,11 @@ export class AiAgentService extends EventEmitter {
     return {
       is_running: this.started && hasAuth,
       model: settings.model,
-      error: hasAuth ? this.lastIssue?.message : "OpenRouter API key is required. Add it in AI settings.",
+      error: hasAuth
+        ? this.lastIssue?.message
+        : settings.apiKey
+          ? "Accept the current AI privacy disclosure before using OpenRouter analysis."
+          : "OpenRouter API key is required. Add it in AI settings.",
     };
   }
 
@@ -447,7 +460,7 @@ export class AiAgentService extends EventEmitter {
         "X-Title": "PacketPilot",
       },
     });
-    return this.runChatCompletionsLoop(client, request, signal, requestId, onTextDelta);
+    return this.runChatCompletionsLoop(client, request, signal, requestId, apiKey, onTextDelta);
   }
 
   private async runChatCompletionsLoop(
@@ -455,6 +468,7 @@ export class AiAgentService extends EventEmitter {
     request: AnalyzeRequest,
     signal: AbortSignal,
     requestId: string,
+    expectedApiKey: string,
     onTextDelta: (delta: string) => void,
   ): Promise<AnalyzeResult> {
     const settings = this.dependencies.settings.getSettings();
@@ -494,6 +508,11 @@ export class AiAgentService extends EventEmitter {
     const toolCalls: AiToolCallTrace[] = [];
 
     while (true) {
+      const currentApiKey = this.getConfiguredApiKey();
+      if (currentApiKey !== expectedApiKey) {
+        throw new Error("OpenRouter credentials changed while analysis was running. Start a new request.");
+      }
+
       const stream = await client.chat.completions.create(
         {
           model,
