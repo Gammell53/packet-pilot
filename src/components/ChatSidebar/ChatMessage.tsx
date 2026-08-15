@@ -105,6 +105,21 @@ export function ChatMessage({
         remarkPlugins={[remarkGfm]}
         components={{
           code: CodeBlock,
+          img: ({ alt }) => (
+            <span className="external-image-omitted">
+              External image omitted{alt ? `: ${alt}` : ""}
+            </span>
+          ),
+          a: ({ href, children }) => {
+            if (!href || !/^https:\/\//i.test(href)) {
+              return <span>{children}</span>;
+            }
+            return (
+              <a href={href} target="_blank" rel="noreferrer noopener">
+                {children}
+              </a>
+            );
+          },
         }}
       >
         {message.content}

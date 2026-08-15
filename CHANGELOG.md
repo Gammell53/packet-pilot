@@ -5,6 +5,33 @@ All notable changes to PacketPilot will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-08-14
+
+### Added
+- Apple Silicon macOS packaging and a packaged-app smoke test against a real public DNS capture
+- Platform-aware discovery for Wireshark's `sharkd`, including `/Applications`, `~/Applications`, Homebrew, and explicit overrides
+- Pull-request CI for renderer tests, sidecar tests, audits, builds, package structure, and macOS smoke coverage
+- An explicit privacy notice and versioned informed consent for optional OpenRouter analysis
+- Package-structure and release-tag verification gates
+
+### Changed
+- Upgraded Electron to 43.4 and documented Node.js 22.12 as the minimum development runtime
+- Made renderer assets relative and isolated Vite output in `dist/renderer` to prevent recursive packaging
+- Positioned macOS as an Apple Silicon beta that requires the latest official Wireshark application
+- Kept saved OpenRouter credentials in the main process and exposed only redacted key status to the renderer
+
+### Fixed
+- Correct Apple Silicon packaged-app target discovery (`dist/mac-arm64`)
+- Packaged renderer/preload loading and macOS keyboard shortcut labels
+- AI-sidecar default model selection
+- Flaky Playwright setup that could interact with virtualized placeholder packet rows
+
+### Security
+- Blocked untrusted renderer navigation and restricted external links to HTTPS
+- Added trusted-renderer checks to privileged IPC handlers
+- Refused plaintext API-key persistence when operating-system secure storage is unavailable
+- Expanded AI disclosure to cover capture filenames, filters, selection metadata, raw packet bytes, and reconstructed streams
+
 ## [0.2.0] - 2026-03-31
 
 ### Added

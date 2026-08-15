@@ -19,7 +19,7 @@ export interface MockApiOptions {
 export function createMockApiScript(options: MockApiOptions): string {
   const frames = JSON.stringify(options.frames ?? []);
   const frameDetails = JSON.stringify(options.frameDetails ?? {});
-  const settings = JSON.stringify(options.settings ?? { apiKey: null, model: "anthropic/claude-sonnet-4" });
+  const settings = JSON.stringify(options.settings ?? { hasApiKey: false, apiKeyUnavailable: false, aiDisclosureAccepted: false, model: "anthropic/claude-sonnet-4" });
   const installHealth = JSON.stringify(options.installHealth ?? { ok: true, issues: [], checked_paths: [], recommended_action: "" });
   const diagnostics = JSON.stringify(options.runtimeDiagnostics ?? {});
   const captureStats = JSON.stringify(options.captureStats ?? { summary: {}, protocol_hierarchy: [], tcp_conversations: [], udp_conversations: [], endpoints: [] });
@@ -30,7 +30,7 @@ export function createMockApiScript(options: MockApiOptions): string {
   const _frames = ${frames};
   const _frameDetails = ${frameDetails};
   let _settings = ${settings};
-  const _installHealth = ${installHealth};
+  let _installHealth = ${installHealth};
   const _diagnostics = ${diagnostics};
   const _captureStats = ${captureStats};
   let _aiRunning = ${aiRunning};
@@ -39,6 +39,7 @@ export function createMockApiScript(options: MockApiOptions): string {
   // Track whether a file has been "loaded"
   let _fileLoaded = false;
   let _activeFilter = "";
+  let _modelCatalogRequestCount = 0;
 
   // Callback registries for test control
   const _sharkdErrorCallbacks = [];
@@ -51,8 +52,14 @@ export function createMockApiScript(options: MockApiOptions): string {
   window.__mockEmitSharkdError = function(msg) {
     _sharkdErrorCallbacks.forEach(function(cb) { cb(msg); });
   };
+  window.__mockSetInstallHealth = function(health) {
+    _installHealth = health;
+  };
   window.__mockSetAiRunning = function(running) {
     _aiRunning = running;
+  };
+  window.__mockGetModelCatalogRequestCount = function() {
+    return _modelCatalogRequestCount;
   };
 
   function filterFrames(filter) {
@@ -96,6 +103,9 @@ export function createMockApiScript(options: MockApiOptions): string {
     app: {
       getRuntimeDiagnostics: function() {
         return Promise.resolve(JSON.parse(JSON.stringify(_diagnostics)));
+      },
+      getStartupCapturePath: function() {
+        return Promise.resolve(null);
       }
     },
     files: {
@@ -182,8 +192,11 @@ export function createMockApiScript(options: MockApiOptions): string {
     },
     ai: {
       start: function() {
-        _aiRunning = true;
-        return Promise.resolve({ is_running: true, model: _settings.model });
+        const hasAuth = _settings.hasApiKey === true && _settings.aiDisclosureAccepted === true;
+        _aiRunning = hasAuth;
+        return Promise.resolve(hasAuth
+          ? { is_running: true, model: _settings.model }
+          : { is_running: false, error: "OpenRouter authentication and current disclosure acceptance are required" });
       },
       stop: function() {
         _aiRunning = false;
@@ -212,8 +225,29 @@ export function createMockApiScript(options: MockApiOptions): string {
       get: function() {
         return Promise.resolve(JSON.parse(JSON.stringify(_settings)));
       },
+      getAvailableModels: function() {
+        _modelCatalogRequestCount += 1;
+        return Promise.resolve([
+          {
+            id: _settings.model,
+            name: "Mock OpenRouter model",
+            description: "Mock model used by Playwright"
+          }
+        ]);
+      },
       setApiKey: function(apiKey) {
-        _settings = Object.assign({}, _settings, { apiKey: apiKey });
+        _settings = Object.assign({}, _settings, {
+          hasApiKey: Boolean(apiKey),
+          apiKeyUnavailable: false,
+          aiDisclosureAccepted: false
+        });
+        return Promise.resolve(JSON.parse(JSON.stringify(_settings)));
+      },
+      acceptAiDisclosure: function() {
+        if (!_settings.hasApiKey) {
+          return Promise.reject(new Error("Add an OpenRouter API key before accepting the AI privacy disclosure."));
+        }
+        _settings = Object.assign({}, _settings, { aiDisclosureAccepted: true });
         return Promise.resolve(JSON.parse(JSON.stringify(_settings)));
       },
       setModel: function(model) {

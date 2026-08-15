@@ -7,6 +7,7 @@ import type {
   RuntimeDiagnostics,
 } from "../types";
 import { desktop } from "../lib/desktop";
+import { isApplePlatform } from "../utils/platform";
 
 interface UseSharkdReturn {
   isReady: boolean;
@@ -23,7 +24,6 @@ interface UseSharkdReturn {
   applyFilter: (filter: string) => Promise<boolean>;
   checkFilter: (filter: string) => Promise<boolean>;
   getFrameDetails: (frameNum: number) => Promise<FrameDetails | null>;
-  runInstallHealthCheck: () => Promise<InstallHealthStatus | null>;
   refreshRuntimeDiagnostics: () => Promise<RuntimeDiagnostics | null>;
   retryInitialization: () => Promise<boolean>;
   clearError: () => void;
@@ -38,12 +38,16 @@ function formatInstallHealthError(health: InstallHealthStatus): string {
     return `- ${issue.message}${pathSuffix}`;
   });
 
+  const repairGuidance = isApplePlatform()
+    ? "Install the latest Wireshark app, then retry. PacketPilot looks in /Applications and ~/Applications."
+    : "Use the repair instructions or reinstall using the latest Windows installer.";
+
   return [
     "PacketPilot installation needs repair.",
     "",
     ...issueLines,
     "",
-    "Use the repair instructions or reinstall using the latest Windows installer.",
+    repairGuidance,
   ].join("\n");
 }
 
@@ -267,7 +271,6 @@ export function useSharkd(): UseSharkdReturn {
     applyFilter,
     checkFilter,
     getFrameDetails,
-    runInstallHealthCheck,
     refreshRuntimeDiagnostics,
     retryInitialization,
     clearError,

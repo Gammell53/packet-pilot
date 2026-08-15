@@ -1,3 +1,4 @@
+import { shortcutModifierLabel } from "../../utils/platform";
 import "./Footer.css";
 
 interface FooterProps {
@@ -57,7 +58,7 @@ export function Footer({
           </span>
         )}
         <span className="shortcuts-hint">
-          <kbd>Ctrl+K</kbd> AI Chat
+          <kbd>{shortcutModifierLabel()}+K</kbd> AI Chat
         </span>
       </div>
     </footer>

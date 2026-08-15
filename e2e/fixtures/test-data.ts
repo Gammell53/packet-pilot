@@ -293,12 +293,23 @@ export const MOCK_RUNTIME_DIAGNOSTICS: RuntimeDiagnostics = {
 };
 
 export const MOCK_SETTINGS: AppSettings = {
-  apiKey: null,
+  hasApiKey: false,
+  apiKeyUnavailable: false,
+  aiDisclosureAccepted: false,
   model: "anthropic/claude-sonnet-4",
 };
 
 export const MOCK_SETTINGS_WITH_KEY: AppSettings = {
-  apiKey: "sk-or-v1-test-key-for-playwright",
+  hasApiKey: true,
+  apiKeyUnavailable: false,
+  aiDisclosureAccepted: true,
+  model: "anthropic/claude-sonnet-4",
+};
+
+export const MOCK_SETTINGS_WITH_UNACCEPTED_KEY: AppSettings = {
+  hasApiKey: true,
+  apiKeyUnavailable: false,
+  aiDisclosureAccepted: false,
   model: "anthropic/claude-sonnet-4",
 };
 

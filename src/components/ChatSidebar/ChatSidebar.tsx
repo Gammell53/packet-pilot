@@ -64,7 +64,14 @@ export function ChatSidebar({
 }: ChatSidebarProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { status, runtimeDiagnostics, start, isStarting, refreshRuntimeDiagnostics } = useAiRuntime();
-  const { settings, availableModels, hasConfiguredAuth, updateApiKey, updateModel } = useSettings();
+  const {
+    settings,
+    availableModels,
+    hasConfiguredAuth,
+    updateApiKey,
+    acceptAiDisclosure,
+    updateModel,
+  } = useSettings({ loadModelCatalog: true });
   const [sidebarWidth, setSidebarWidth] = useState(380);
   const [showSetup, setShowSetup] = useState(false);
   const [selectedModel, setSelectedModel] = useState(settings.model);
@@ -229,6 +236,7 @@ export function ChatSidebar({
         <ProviderSetup
           settings={settings}
           onUpdateApiKey={updateApiKey}
+          onAcceptDisclosure={acceptAiDisclosure}
         />
       ) : !status.is_running ? (
         <div className="chat-runtime-status">

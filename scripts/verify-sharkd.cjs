@@ -6,7 +6,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
 
 const BINARIES_DIR = path.join(__dirname, '..', 'resources', 'sharkd');
 
@@ -38,21 +37,39 @@ function checkBinaryExists(binaryName) {
   return fs.existsSync(binaryPath);
 }
 
-function checkSystemSharkd() {
-  try {
-    if (process.platform === 'win32') {
-      const paths = [
-        'C:\\Program Files\\Wireshark\\sharkd.exe',
-        'C:\\Program Files (x86)\\Wireshark\\sharkd.exe',
-      ];
-      return paths.some(p => fs.existsSync(p));
-    } else {
-      execSync('which sharkd', { stdio: 'pipe' });
-      return true;
-    }
-  } catch {
-    return false;
+function systemSharkdCandidates() {
+  const executable = process.platform === 'win32' ? 'sharkd.exe' : 'sharkd';
+  const separator = process.platform === 'win32' ? ';' : ':';
+  const candidates = [
+    (process.env.PACKET_PILOT_SHARKD_PATH || '').trim(),
+    ...(process.env.PATH || '')
+      .split(separator)
+      .filter(Boolean)
+      .map((entry) => path.join(entry, executable)),
+  ];
+
+  if (process.platform === 'win32') {
+    candidates.push(
+      'C:\\Program Files\\Wireshark\\sharkd.exe',
+      'C:\\Program Files (x86)\\Wireshark\\sharkd.exe',
+    );
+  } else if (process.platform === 'darwin') {
+    candidates.push(
+      path.join(process.env.HOME || '', 'Applications', 'Wireshark.app', 'Contents', 'MacOS', 'sharkd'),
+      '/Applications/Wireshark.app/Contents/MacOS/sharkd',
+      '/opt/homebrew/bin/sharkd',
+      '/usr/local/bin/sharkd',
+      '/usr/bin/sharkd',
+    );
+  } else {
+    candidates.push('/usr/bin/sharkd', '/usr/local/bin/sharkd');
   }
+
+  return [...new Set(candidates.filter(Boolean))];
+}
+
+function checkSystemSharkd() {
+  return systemSharkdCandidates().some((candidate) => fs.existsSync(candidate));
 }
 
 function main() {
@@ -100,8 +117,13 @@ function main() {
     console.log('✅ Ready for production build (bundled sharkd found)');
     process.exit(0);
   } else if (hasSystem) {
-    console.log('✅ Ready for development build (system sharkd found)');
-    console.log('⚠️  Production builds require bundled sharkd');
+    if (process.platform === 'darwin') {
+      console.log('✅ Ready for macOS beta packaging (installed Wireshark runtime found)');
+      console.log('ℹ️  The macOS beta intentionally requires the official Wireshark application');
+    } else {
+      console.log('✅ Ready for development build (system sharkd found)');
+      console.log('⚠️  Packaged Linux and Windows builds require bundled sharkd');
+    }
     process.exit(0);
   } else {
     console.error('❌ BUILD WILL FAIL: No sharkd available!');

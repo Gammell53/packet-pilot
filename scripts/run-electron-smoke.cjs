@@ -50,16 +50,23 @@ function parseArgs(argv) {
   return options;
 }
 
-function defaultPackagedTarget() {
+function defaultPackagedTarget({ platform = process.platform, arch = process.arch } = {}) {
   const candidates = {
     linux: path.join("dist", "linux-unpacked", "packet-pilot"),
     win32: path.join("dist", "win-unpacked", "PacketPilot.exe"),
-    darwin: path.join("dist", "mac", "PacketPilot.app", "Contents", "MacOS", "PacketPilot"),
+    darwin: path.join(
+      "dist",
+      arch === "arm64" ? "mac-arm64" : "mac",
+      "PacketPilot.app",
+      "Contents",
+      "MacOS",
+      "PacketPilot",
+    ),
   };
 
-  const candidate = candidates[process.platform];
+  const candidate = candidates[platform];
   if (!candidate) {
-    throw new Error(`Unsupported platform for smoke target autodetect: ${process.platform}`);
+    throw new Error(`Unsupported platform for smoke target autodetect: ${platform}`);
   }
 
   return candidate;
@@ -91,6 +98,21 @@ function buildLaunchCommand(target, env) {
     args: [],
     env,
   };
+}
+
+function validateSmokeOutcome({ result, exitCode, timedOut, stderr = "" }) {
+  if (timedOut) {
+    throw new Error(`Smoke run timed out before completing (exit=${exitCode}).\n${stderr}`);
+  }
+  if (!result) {
+    throw new Error(`Smoke run exited without a result payload (exit=${exitCode}).\n${stderr}`);
+  }
+  if (exitCode !== 0) {
+    throw new Error(`Smoke run exited with code ${exitCode} despite producing a result.\n${stderr}`);
+  }
+  if (!result.ok) {
+    throw new Error(`Smoke run failed: ${result.error || "unknown error"}`);
+  }
 }
 
 async function main() {
@@ -127,8 +149,14 @@ async function main() {
     stdio: ["ignore", "pipe", "pipe"],
   });
 
+  let timedOut = false;
+  let hardKill = null;
   const timeout = setTimeout(() => {
+    timedOut = true;
     child.kill("SIGTERM");
+    hardKill = setTimeout(() => {
+      child.kill("SIGKILL");
+    }, 5000);
   }, options.timeoutMs);
 
   child.stdout.on("data", (chunk) => {
@@ -152,12 +180,26 @@ async function main() {
     process.stderr.write(text);
   });
 
-  const exitCode = await new Promise((resolve, reject) => {
-    child.once("error", reject);
-    child.once("close", resolve);
-  });
-
-  clearTimeout(timeout);
+  let closeDeadline = null;
+  let exitCode;
+  try {
+    exitCode = await Promise.race([
+      new Promise((resolve, reject) => {
+        child.once("error", reject);
+        child.once("close", resolve);
+      }),
+      new Promise((_resolve, reject) => {
+        closeDeadline = setTimeout(
+          () => reject(new Error("Smoke process did not exit after forced termination")),
+          options.timeoutMs + 7000,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeout);
+    if (hardKill) clearTimeout(hardKill);
+    if (closeDeadline) clearTimeout(closeDeadline);
+  }
 
   if (!result && stdoutBuffer.startsWith(RESULT_PREFIX)) {
     result = JSON.parse(stdoutBuffer.slice(RESULT_PREFIX.length));
@@ -169,19 +211,17 @@ async function main() {
 
   fs.rmSync(resultDir, { recursive: true, force: true });
 
-  if (!result) {
-    throw new Error(`Smoke run exited without a result payload (exit=${exitCode}).\n${stderr}`);
-  }
-
-  if (!result.ok) {
-    throw new Error(`Smoke run failed: ${result.error || "unknown error"}`);
-  }
+  validateSmokeOutcome({ result, exitCode, timedOut, stderr });
 
   console.log("");
   console.log("Smoke verification passed.");
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
-});
+module.exports = { defaultPackagedTarget, validateSmokeOutcome };
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  });
+}

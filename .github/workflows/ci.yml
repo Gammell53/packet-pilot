@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit production and build dependencies
+        run: npm audit --audit-level=high
+
+      - name: Run Electron service tests
+        run: npm run test:ai-harness
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+
+      - name: Run Python sidecar tests
+        run: uv run --project sidecar --extra dev pytest sidecar/tests -q
+
+      - name: Type-check E2E contracts
+        run: npm run test:e2e:typecheck
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run renderer E2E tests
+        run: npm run test:e2e -- --workers=1
+
+      - name: Build application
+        run: npm run build
+
+  macos-smoke:
+    runs-on: macos-15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install Wireshark runtime
+        run: brew install --cask wireshark-app
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify sharkd discovery
+        run: npm run verify:sharkd
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium
+
+      - name: Run macOS renderer E2E tests
+        run: npm run test:e2e -- --workers=1 e2e/tests/macos.spec.ts e2e/tests/chat-sidebar.spec.ts
+
+      - name: Build unpacked macOS application
+        run: npm run build && npx electron-builder --mac --dir --publish never
+
+      - name: Verify packaged app structure
+        run: npm run verify:package
+
+      - name: Download public capture fixture
+        run: npm run corpus:sync -- --ids dns-lookups
+
+      - name: Run packaged macOS smoke test
+        run: >-
+          npm run smoke:packaged --
+          --capture test-results/public-pcaps/dns.cap
+          --filter dns
+          --timeout-ms 60000

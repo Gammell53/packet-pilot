@@ -46,6 +46,7 @@ export const desktop = {
     get: () => getPacketPilotApi().settings.get(),
     getAvailableModels: () => getPacketPilotApi().settings.getAvailableModels(),
     setApiKey: (apiKey: string | null) => getPacketPilotApi().settings.setApiKey(apiKey),
+    acceptAiDisclosure: () => getPacketPilotApi().settings.acceptAiDisclosure(),
     setModel: (model: string) => getPacketPilotApi().settings.setModel(model),
   },
 };

@@ -1,7 +1,7 @@
 import { app } from "electron";
 import { EventEmitter } from "node:events";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, win32 } from "node:path";
 import { spawn } from "node:child_process";
 import readline from "node:readline";
 import type {
@@ -112,15 +112,55 @@ function bundledBinaryCandidates(): string[] {
   );
 }
 
-function systemBinaryCandidates(): string[] {
-  if (process.platform === "win32") {
-    return [
+interface SharkdDiscoveryOptions {
+  platform?: NodeJS.Platform;
+  homeDir?: string;
+  pathValue?: string;
+  overridePath?: string;
+}
+
+export function getSystemBinaryCandidates(options: SharkdDiscoveryOptions = {}): string[] {
+  const platform = options.platform ?? process.platform;
+  const homeDir = options.homeDir ?? process.env.HOME ?? process.env.USERPROFILE ?? "";
+  const pathValue = options.pathValue ?? process.env.PATH ?? "";
+  const overridePath = options.overridePath ?? process.env.PACKET_PILOT_SHARKD_PATH ?? "";
+  const separator = platform === "win32" ? ";" : ":";
+  const executable = platform === "win32" ? "sharkd.exe" : "sharkd";
+  const joinForPlatform = platform === "win32" ? win32.join : join;
+
+  const candidates = [
+    overridePath.trim(),
+    ...pathValue
+      .split(separator)
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .map((entry) => joinForPlatform(entry, executable)),
+  ];
+
+  if (platform === "win32") {
+    candidates.push(
       "C:\\Program Files\\Wireshark\\sharkd.exe",
       "C:\\Program Files (x86)\\Wireshark\\sharkd.exe",
-    ];
+    );
+  } else if (platform === "darwin") {
+    if (homeDir) {
+      candidates.push(join(homeDir, "Applications", "Wireshark.app", "Contents", "MacOS", "sharkd"));
+    }
+    candidates.push(
+      "/Applications/Wireshark.app/Contents/MacOS/sharkd",
+      "/opt/homebrew/bin/sharkd",
+      "/usr/local/bin/sharkd",
+      "/usr/bin/sharkd",
+    );
+  } else {
+    candidates.push("/usr/bin/sharkd", "/usr/local/bin/sharkd");
   }
 
-  return ["/usr/bin/sharkd", "/usr/local/bin/sharkd"];
+  return [...new Set(candidates.filter(Boolean))];
+}
+
+function systemBinaryCandidates(): string[] {
+  return getSystemBinaryCandidates();
 }
 
 function convertFrame(frame: SharkdFrame): FrameData {
@@ -507,18 +547,6 @@ class SharkdService extends EventEmitter {
       }
     }
 
-    if (
-      this.lastIssue &&
-      this.lastIssue.source === "sharkd" &&
-      issues.every((issue) => issue.message !== this.lastIssue?.message)
-    ) {
-      issues.push({
-        code: this.lastIssue.stage === "startup" ? "spawn_failed" : "runtime_error",
-        message: this.lastIssue.message,
-        path: this.resolvedBinaryPath ?? undefined,
-      });
-    }
-
     return {
       ok: issues.length === 0,
       issues,
@@ -559,14 +587,23 @@ class SharkdService extends EventEmitter {
   }
 
   private findSharkd(): string {
-    for (const candidate of [...bundledBinaryCandidates(), ...systemBinaryCandidates()]) {
+    const requiresBundledRuntime = app.isPackaged && process.platform !== "darwin";
+    const candidates = requiresBundledRuntime
+      ? bundledBinaryCandidates()
+      : [...bundledBinaryCandidates(), ...systemBinaryCandidates()];
+
+    for (const candidate of candidates) {
       if (existsSync(candidate)) {
         this.resolvedBinaryPath = candidate;
         return candidate;
       }
     }
 
-    throw new Error("sharkd binary not found in bundled or system locations");
+    throw new Error(
+      requiresBundledRuntime
+        ? "Bundled sharkd runtime not found in packaged application resources"
+        : "sharkd binary not found in bundled or system locations",
+    );
   }
 
   private async getFilterTotal(filter: string): Promise<number> {
